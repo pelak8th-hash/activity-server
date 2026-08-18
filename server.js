@@ -1,148 +1,184 @@
-const http = require("http");
+const express = require("express");
+const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
 
+const app = express();
+
 const PORT = process.env.PORT || 8080;
+
+// ================================
+// اتصال به Supabase
+// ================================
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SECRET_KEY
 );
 
-const server = http.createServer(async (req, res) => {
 
-    // پاسخ ساده برای تست آنلاین بودن سرور
-    if (req.method === "GET" && req.url === "/") {
-        res.writeHead(200, {
-            "Content-Type": "text/plain; charset=utf-8"
-        });
+// ================================
+// تنظیمات سرور
+// ================================
 
-        res.end("Activity server is running!");
-        return;
-    }
+app.use(cors());
+app.use(express.json());
 
 
-    // دریافت اطلاعات فعالیت
-    if (req.method === "POST" && req.url === "/activity") {
+// ================================
+// تست آنلاین بودن سرور
+// ================================
 
-        let body = "";
+app.get("/", (req, res) => {
 
-        req.on("data", chunk => {
-            body += chunk.toString();
-        });
-
-        req.on("end", async () => {
-
-            try {
-
-                const data = JSON.parse(body);
-
-                const {
-                    first_name,
-                    last_name,
-                    date,
-                    time,
-                    activity
-                } = data;
-
-
-                // بررسی اطلاعات ضروری
-                if (
-                    !first_name ||
-                    !last_name ||
-                    !date ||
-                    !time ||
-                    !activity
-                ) {
-
-                    res.writeHead(400, {
-                        "Content-Type": "application/json"
-                    });
-
-                    res.end(JSON.stringify({
-                        success: false,
-                        message: "Missing information"
-                    }));
-
-                    return;
-                }
-
-
-                // ذخیره در Supabase
-                const { error } = await supabase
-                    .from("users")
-                    .insert([
-                        {
-                            first_name: first_name,
-                            last_name: last_name,
-                            date: date,
-                            time: time,
-                            activity: activity
-                        }
-                    ]);
-
-
-                if (error) {
-
-                    console.log("Supabase error:", error);
-
-                    res.writeHead(500, {
-                        "Content-Type": "application/json"
-                    });
-
-                    res.end(JSON.stringify({
-                        success: false,
-                        message: "Database error"
-                    }));
-
-                    return;
-                }
-
-
-                console.log(
-                    "Activity saved:",
-                    first_name,
-                    last_name,
-                    date,
-                    time,
-                    activity
-                );
-
-
-                res.writeHead(200, {
-                    "Content-Type": "application/json"
-                });
-
-                res.end(JSON.stringify({
-                    success: true
-                }));
-
-            } catch (error) {
-
-                console.log("Request error:", error);
-
-                res.writeHead(400, {
-                    "Content-Type": "application/json"
-                });
-
-                res.end(JSON.stringify({
-                    success: false,
-                    message: "Invalid request"
-                }));
-            }
-
-        });
-
-        return;
-    }
-
-
-    // مسیر ناشناخته
-    res.writeHead(404);
-    res.end("Not Found");
+    res.status(200).send(
+        "Activity server is running!"
+    );
 
 });
 
 
-server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server started on port ${PORT}`);
+// ================================
+// دریافت اطلاعات فعالیت
+// POST /activity
+// ================================
+
+app.post("/activity", async (req, res) => {
+
+    try {
+
+        const {
+            first_name,
+            last_name,
+            date,
+            time,
+            activity
+        } = req.body;
+
+
+        // ----------------------------
+        // بررسی اطلاعات
+        // ----------------------------
+
+        if (
+            typeof first_name !== "string" ||
+            typeof last_name !== "string" ||
+            typeof date !== "string" ||
+            typeof time !== "string" ||
+            typeof activity !== "string"
+        ) {
+
+            return res.status(400).json({
+                success: false,
+                message: "MISSING_DATA"
+            });
+
+        }
+
+
+        // جلوگیری از ارسال اطلاعات خالی
+
+        if (
+            first_name.trim() === "" ||
+            last_name.trim() === "" ||
+            date.trim() === "" ||
+            time.trim() === "" ||
+            activity.trim() === ""
+        ) {
+
+            return res.status(400).json({
+                success: false,
+                message: "MISSING_DATA"
+            });
+
+        }
+
+
+        // ----------------------------
+        // ذخیره در Supabase
+        // ----------------------------
+
+        const { error } = await supabase
+            .from("users")
+            .insert([
+                {
+                    first_name: first_name.trim(),
+                    last_name: last_name.trim(),
+                    date: date.trim(),
+                    time: time.trim(),
+                    activity: activity.trim()
+                }
+            ]);
+
+
+        // ----------------------------
+        // بررسی خطای Supabase
+        // ----------------------------
+
+        if (error) {
+
+            console.log(
+                "Supabase error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "DATABASE_ERROR"
+            });
+
+        }
+
+
+        // ----------------------------
+        // موفقیت
+        // ----------------------------
+
+        console.log(
+            "Activity saved:",
+            first_name,
+            last_name,
+            date,
+            time,
+            activity
+        );
+
+
+        return res.status(200).json({
+            success: true,
+            message: "SAVED"
+        });
+
+
+    } catch (error) {
+
+        console.log(
+            "Server error:",
+            error
+        );
+
+
+        return res.status(500).json({
+            success: false,
+            message: "SERVER_ERROR"
+        });
+
+    }
+
 });
+
+
+// ================================
+// شروع سرور
+// ================================
+
+app.listen(
+    PORT,
+    "0.0.0.0",
+    () => {
+
+        console.log(
+            `Server started on port ${PORT}`
+        );
+
+    }
+);
