@@ -6,6 +6,7 @@ const app = express();
 
 const PORT = process.env.PORT || 8080;
 
+
 // ================================
 // اتصال به Supabase
 // ================================
@@ -17,7 +18,7 @@ const supabase = createClient(
 
 
 // ================================
-// تنظیمات سرور
+// تنظیمات
 // ================================
 
 app.use(cors());
@@ -25,7 +26,7 @@ app.use(express.json());
 
 
 // ================================
-// تست آنلاین بودن سرور
+// تست سرور
 // ================================
 
 app.get("/", (req, res) => {
@@ -38,17 +39,18 @@ app.get("/", (req, res) => {
 
 
 // ================================
-// دریافت اطلاعات فعالیت
-// POST /activity
+// دریافت رزرو
 // ================================
 
 app.post("/activity", async (req, res) => {
 
     try {
 
+        console.log("Received:", req.body);
+
+
         const {
-            first_name,
-            last_name,
+            full_name,
             date,
             time,
             activity
@@ -60,8 +62,7 @@ app.post("/activity", async (req, res) => {
         // ----------------------------
 
         if (
-            typeof first_name !== "string" ||
-            typeof last_name !== "string" ||
+            typeof full_name !== "string" ||
             typeof date !== "string" ||
             typeof time !== "string" ||
             typeof activity !== "string"
@@ -75,11 +76,8 @@ app.post("/activity", async (req, res) => {
         }
 
 
-        // جلوگیری از ارسال اطلاعات خالی
-
         if (
-            first_name.trim() === "" ||
-            last_name.trim() === "" ||
+            full_name.trim() === "" ||
             date.trim() === "" ||
             time.trim() === "" ||
             activity.trim() === ""
@@ -94,32 +92,52 @@ app.post("/activity", async (req, res) => {
 
 
         // ----------------------------
+        // جدا کردن نام و نام خانوادگی
+        // ----------------------------
+
+        const nameParts = full_name.trim().split(/\s+/);
+
+        const firstName = nameParts.shift();
+
+        const lastName = nameParts.join(" ");
+
+
+        // اگر فقط یک اسم وارد شده باشد
+        if (!lastName) {
+
+            return res.status(400).json({
+                success: false,
+                message: "NAME_ERROR"
+            });
+
+        }
+
+
+        // ----------------------------
         // ذخیره در Supabase
         // ----------------------------
 
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from("users")
             .insert([
                 {
-                    first_name: first_name.trim(),
-                    last_name: last_name.trim(),
+                    first_name: firstName,
+                    last_name: lastName,
                     date: date.trim(),
                     time: time.trim(),
                     activity: activity.trim()
                 }
-            ]);
+            ])
+            .select();
 
 
         // ----------------------------
-        // بررسی خطای Supabase
+        // خطای Supabase
         // ----------------------------
 
         if (error) {
 
-            console.log(
-                "Supabase error:",
-                error
-            );
+            console.log("Supabase error:", error);
 
             return res.status(500).json({
                 success: false,
@@ -134,18 +152,15 @@ app.post("/activity", async (req, res) => {
         // ----------------------------
 
         console.log(
-            "Activity saved:",
-            first_name,
-            last_name,
-            date,
-            time,
-            activity
+            "Saved successfully:",
+            data
         );
 
 
         return res.status(200).json({
             success: true,
-            message: "SAVED"
+            message: "SAVED",
+            data: data
         });
 
 
