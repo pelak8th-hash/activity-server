@@ -285,10 +285,29 @@ const crypto = require("crypto");
 const otpStore = new Map();
 
 function normalizePhone(phone) {
-    return String(phone || "")
+
+    let value = String(phone || "")
         .replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
         .replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+        .replace(/\s+/g, "")
         .trim();
+
+    // حذف +
+    if (value.startsWith("+")) {
+        value = value.substring(1);
+    }
+
+    // تبدیل 09xxxxxxxxx به 989xxxxxxxxx
+    if (value.startsWith("09") && value.length === 11) {
+        value = "98" + value.substring(1);
+    }
+
+    // اگر با 9 شروع شده باشد
+    else if (value.startsWith("9") && value.length === 10) {
+        value = "98" + value;
+    }
+
+    return value;
 }
 
 
