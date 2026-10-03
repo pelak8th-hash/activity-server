@@ -279,6 +279,173 @@ app.get("/users", async (req, res) => {
 // شروع سرور
 // ========================================
 
+const crypto = require("crypto");
+
+// OTPهای موقت
+const otpStore = new Map();
+
+function normalizePhone(phone) {
+    return String(phone || "")
+        .replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
+        .replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
+        .trim();
+}
+
+
+// ارسال OTP
+app.post("/otp/send", async (req, res) => {
+    try {
+        const phone = normalizePhone(req.body.phone);
+
+        if (!phone) {
+            return res.status(400).json({
+                success: false,
+                message: "PHONE_REQUIRED"
+            });
+        }
+
+        // تولید کد 6 رقمی
+        const otp = crypto.randomInt(100000, 1000000).toString();
+
+        // ذخیره OTP برای 5 دقیقه
+        otpStore.set(phone, {
+            otp,
+            expiresAt: Date.now() + 5 * 60 * 1000,
+            attempts: 0
+        });
+
+        const response = await fetch(
+            "https://safir.bale.ai/api/v3/send_message",
+            {
+                method: "POST",
+                headers: {
+                    "api-access-key":
+                        process.env.BALE_API_ACCESS_KEY,
+                    "Content-Type":
+                        "application/json"
+                },
+                body: JSON.stringify({
+                    bot_id: Number(process.env.BALE_BOT_ID),
+                    phone_number: phone,
+                    message_data: {
+                        otp_message: {
+                            otp: otp
+                        }
+                    }
+                })
+            }
+        );
+
+        const text = await response.text();
+
+        console.log(
+            "Bale status:",
+            response.status
+        );
+
+        console.log(
+            "Bale response:",
+            text
+        );
+
+        if (!response.ok) {
+            otpStore.delete(phone);
+
+            return res.status(500).json({
+                success: false,
+                message: "BALE_ERROR"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "OTP_SENT"
+        });
+
+    } catch (error) {
+        console.log(
+            "OTP send error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "SERVER_ERROR"
+        });
+    }
+});
+
+
+// بررسی OTP
+app.post("/otp/verify", async (req, res) => {
+    try {
+        const phone = normalizePhone(req.body.phone);
+        const otp = String(req.body.otp || "").trim();
+
+        if (!phone || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: "MISSING_DATA"
+            });
+        }
+
+        const saved = otpStore.get(phone);
+
+        if (!saved) {
+            return res.status(400).json({
+                success: false,
+                message: "OTP_NOT_FOUND"
+            });
+        }
+
+        if (Date.now() > saved.expiresAt) {
+            otpStore.delete(phone);
+
+            return res.status(400).json({
+                success: false,
+                message: "OTP_EXPIRED"
+            });
+        }
+
+        saved.attempts++;
+
+        if (saved.attempts > 5) {
+            otpStore.delete(phone);
+
+            return res.status(429).json({
+                success: false,
+                message: "TOO_MANY_ATTEMPTS"
+            });
+        }
+
+        if (otp !== saved.otp) {
+            return res.status(400).json({
+                success: false,
+                message: "INVALID_OTP"
+            });
+        }
+
+        // OTP یکبار مصرف است
+        otpStore.delete(phone);
+
+        return res.status(200).json({
+            success: true,
+            message: "USER_VERIFIED"
+        });
+
+    } catch (error) {
+        console.log(
+            "OTP verify error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "SERVER_ERROR"
+        });
+    }
+});
+
 app.listen(
 
     PORT,
