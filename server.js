@@ -276,6 +276,276 @@ app.get("/users", async (req, res) => {
 
 
 // ========================================
+// ثبت رزرو جدید
+// ========================================
+
+app.post("/reservation", async (req, res) => {
+
+    try {
+
+        console.log(
+            "Reservation received:",
+            req.body
+        );
+
+
+        const {
+            first_name,
+            last_name,
+            phone,
+            gender,
+            date,
+            time,
+            activity,
+            companions
+        } = req.body;
+
+
+        // بررسی نوع اطلاعات
+
+        if (
+            typeof first_name !== "string" ||
+            typeof last_name !== "string" ||
+            typeof phone !== "string" ||
+            typeof gender !== "string" ||
+            typeof date !== "string" ||
+            typeof time !== "string" ||
+            typeof activity !== "string"
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "MISSING_DATA"
+
+            });
+
+        }
+
+
+        // بررسی تعداد همراه
+
+        const companionsNumber =
+            Number(companions);
+
+
+        if (
+            !Number.isInteger(companionsNumber) ||
+            companionsNumber < 0 ||
+            companionsNumber > 9
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "INVALID_COMPANIONS"
+
+            });
+
+        }
+
+
+        // بررسی خالی نبودن اطلاعات
+
+        if (
+            first_name.trim() === "" ||
+            last_name.trim() === "" ||
+            phone.trim() === "" ||
+            gender.trim() === "" ||
+            date.trim() === "" ||
+            time.trim() === "" ||
+            activity.trim() === ""
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "MISSING_DATA"
+
+            });
+
+        }
+
+
+        // ========================================
+        // بررسی ظرفیت
+        // ========================================
+
+        const {
+            data: reservations,
+            error: capacityError
+        } = await supabase
+
+            .from("reservations")
+
+            .select("companions")
+
+            .eq("date", date.trim())
+
+            .eq("time", time.trim());
+
+
+        if (capacityError) {
+
+            console.log(
+                "Capacity check error:",
+                capacityError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        // محاسبه تعداد نفرات رزرو شده
+
+        let reservedPeople = 0;
+
+
+        for (const reservation of reservations) {
+
+            reservedPeople +=
+                1 + Number(reservation.companions || 0);
+
+        }
+
+
+        // تعداد افراد این رزرو
+
+        const requestedPeople =
+            1 + companionsNumber;
+
+
+        // حداکثر ظرفیت هر سانس = 10 نفر
+
+        if (
+            reservedPeople + requestedPeople > 10
+        ) {
+
+            return res.status(409).json({
+
+                success: false,
+
+                message: "CAPACITY_FULL"
+
+            });
+
+        }
+
+
+        // ========================================
+        // ذخیره رزرو
+        // ========================================
+
+        const {
+            data,
+            error
+        } = await supabase
+
+            .from("reservations")
+
+            .insert([
+
+                {
+
+                    first_name:
+                        first_name.trim(),
+
+                    last_name:
+                        last_name.trim(),
+
+                    phone:
+                        phone.trim(),
+
+                    gender:
+                        gender.trim(),
+
+                    date:
+                        date.trim(),
+
+                    time:
+                        time.trim(),
+
+                    activity:
+                        activity.trim(),
+
+                    companions:
+                        companionsNumber
+
+                }
+
+            ])
+
+            .select();
+
+
+        // بررسی خطای Supabase
+
+        if (error) {
+
+            console.log(
+                "Reservation database error:",
+                error
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        console.log(
+            "Reservation saved:",
+            data
+        );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message: "RESERVATION_SAVED",
+
+            data: data
+
+        });
+
+
+    } catch (error) {
+
+        console.log(
+            "Reservation server error:",
+            error
+        );
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "SERVER_ERROR"
+
+        });
+
+    }
+
+});
+
+// ========================================
 // شروع سرور
 // ========================================
 
