@@ -571,6 +571,13 @@ app.post("/reservation", async (req, res) => {
             data
         );
 
+        // ========================================
+        // Token یک‌بار مصرف است
+        // ========================================
+
+        verifiedStore.delete(
+            verificationToken
+        );
 
         return res.status(200).json({
 
