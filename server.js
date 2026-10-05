@@ -283,6 +283,64 @@ app.post("/reservation", async (req, res) => {
 
     try {
 
+        // ========================================
+        // بررسی Verification Token
+        // ========================================
+
+        const verificationToken =
+            String(req.body.verificationToken || "").trim();
+
+
+        if (!verificationToken) {
+
+            return res.status(401).json({
+
+                success: false,
+
+                message: "VERIFICATION_REQUIRED"
+
+            });
+
+        }
+
+
+        const verified =
+            verifiedStore.get(verificationToken);
+
+
+        if (!verified) {
+
+            return res.status(401).json({
+
+                success: false,
+
+                message: "INVALID_VERIFICATION"
+
+            });
+
+        }
+
+
+        // بررسی انقضای توکن
+
+        if (
+            Date.now() > verified.expiresAt
+        ) {
+
+            verifiedStore.delete(
+                verificationToken
+            );
+
+            return res.status(401).json({
+
+                success: false,
+
+                message: "VERIFICATION_EXPIRED"
+
+            });
+
+        }
+
         console.log(
             "Reservation received:",
             req.body
@@ -464,7 +522,7 @@ app.post("/reservation", async (req, res) => {
                         last_name.trim(),
 
                     phone:
-                        phone.trim(),
+                        verified.phone,
 
                     gender:
                         gender.trim(),
