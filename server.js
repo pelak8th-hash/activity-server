@@ -431,145 +431,61 @@ app.post("/reservation", async (req, res) => {
         // ========================================
         // بررسی ظرفیت
         // ========================================
-
-        const {
-            data: reservations,
-            error: capacityError
-        } = await supabase
-
-            .from("reservations")
-
-            .select("companions")
-
-            .eq("date", date.trim())
-
-            .eq("time", time.trim());
-
-
-        if (capacityError) {
-
-            console.log(
-                "Capacity check error:",
-                capacityError
-            );
+        const { data: reservationResult, error: reservationError } =
+            await supabase.rpc("create_reservation", {
+                p_first_name: first_name,
+                p_last_name: last_name,
+                p_phone: verified.phone,
+                p_gender: gender,
+                p_date: date,
+                p_time: time,
+                p_activity: activity,
+                p_companions: companions
+            });
+    
+        if (reservationError) {
+            console.error("❌ RPC reservation error:", reservationError);
 
             return res.status(500).json({
-
                 success: false,
-
                 message: "DATABASE_ERROR"
-
             });
-
         }
-
-
-        // محاسبه تعداد نفرات رزرو شده
-
-        let reservedPeople = 0;
-
-
-        for (const reservation of reservations) {
-
-            reservedPeople +=
-                1 + Number(reservation.companions || 0);
-
-        }
-
-
-        // تعداد افراد این رزرو
-
-        const requestedPeople =
-            1 + companionsNumber;
-
-
-        // حداکثر ظرفیت هر سانس = 10 نفر
 
         if (
-            reservedPeople + requestedPeople > 10
+            reservationResult &&
+            reservationResult.success === false &&
+            reservationResult.message === "CAPACITY_FULL"
         ) {
-
             return res.status(409).json({
-
                 success: false,
-
                 message: "CAPACITY_FULL"
-
             });
-
         }
 
-
-        // ========================================
-        // ذخیره رزرو
-        // ========================================
-
-        const {
-            data,
-            error
-        } = await supabase
-
-            .from("reservations")
-
-            .insert([
-
-                {
-
-                    first_name:
-                        first_name.trim(),
-
-                    last_name:
-                        last_name.trim(),
-
-                    phone:
-                        verified.phone,
-
-                    gender:
-                        gender.trim(),
-
-                    date:
-                        date.trim(),
-
-                    time:
-                        time.trim(),
-
-                    activity:
-                        activity.trim(),
-
-                    companions:
-                        companionsNumber
-
-                }
-
-            ])
-
-            .select();
-
-
-        // بررسی خطای Supabase
-
-        if (error) {
-
-            console.log(
-                "Reservation database error:",
-                error
+        if (
+            !reservationResult ||
+            reservationResult.success !== true
+        ) {
+            console.error(
+                "❌ Unexpected reservation RPC result:",
+                reservationResult
             );
 
             return res.status(500).json({
-
                 success: false,
-
-                message: "DATABASE_ERROR"
-
+                message: "RESERVATION_FAILED"
             });
-
         }
 
+        // توکن فقط بعد از ذخیره موفق رزرو مصرف می‌شود
+        verifiedStore.delete(verificationToken);
 
-        console.log(
-            "Reservation saved:",
-            data
-        );
+        return res.status(200).json({
+            success: true,
+            message: "RESERVATION_SAVED",
+            data: reservationResult.data
+        });
 
         // ========================================
         // Token یک‌بار مصرف است
