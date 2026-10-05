@@ -564,35 +564,6 @@ function normalizePhone(phone) {
     return value;
 }
 
-app.get("/test-bale", async (req, res) => {
-    try {
-        console.log("🧪 Testing connection to Bale...");
-
-        const response = await fetch(
-            "https://safir.bale.ai",
-            {
-                method: "GET",
-                signal: AbortSignal.timeout(10000)
-            }
-        );
-
-        console.log("🧪 Bale test status:", response.status);
-
-        return res.status(200).json({
-            success: true,
-            status: response.status
-        });
-
-    } catch (error) {
-        console.error("🧪 Bale connection test failed:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: error.message,
-            code: error.code || null
-        });
-    }
-});
 
 // ارسال OTP
 app.post("/otp/send", async (req, res) => {
