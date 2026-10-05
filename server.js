@@ -554,6 +554,9 @@ const crypto = require("crypto");
 // OTPهای موقت
 const otpStore = new Map();
 
+// توکن‌های تأیید موقت پس از تأیید OTP
+const verifiedStore = new Map();
+
 function normalizePhone(phone) {
 
     let value = String(phone || "")
