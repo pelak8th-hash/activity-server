@@ -717,14 +717,40 @@ app.post("/otp/verify", async (req, res) => {
             });
         }
 
-        // OTP یکبار مصرف است
-        otpStore.delete(phone);
+    // OTP یکبار مصرف است
+    otpStore.delete(phone);
 
-        return res.status(200).json({
-            success: true,
-            message: "USER_VERIFIED"
-        });
 
+    // ========================================
+    // ساخت توکن تأیید موقت
+    // ========================================
+
+    const verificationToken =
+        crypto.randomBytes(32).toString("hex");
+
+
+    // ذخیره توکن برای 10 دقیقه
+    verifiedStore.set(verificationToken, {
+
+        phone: phone,
+
+        expiresAt:
+            Date.now() + 10 * 60 * 1000
+
+    });
+
+
+    // پاسخ موفق
+    return res.status(200).json({
+
+        success: true,
+
+        message: "USER_VERIFIED",
+
+        verificationToken:
+            verificationToken
+
+    });
     } catch (error) {
         console.log(
             "OTP verify error:",
