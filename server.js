@@ -42,6 +42,119 @@ app.get("/", (req, res) => {
 
 
 // ========================================
+// دریافت تنظیمات سانس
+// آخرین تنظیمی که start_date آن
+// کوچکتر یا مساوی تاریخ انتخابی باشد.
+// ========================================
+
+app.get("/reservation/sessions", async (req, res) => {
+
+    try {
+
+        const date =
+            String(req.query.date || "").trim();
+
+        if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date)) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "INVALID_DATE"
+
+            });
+
+        }
+
+        const {
+            data,
+            error
+        } = await supabase
+
+            .from("activity_types")
+
+            .select("sessions,start_date")
+
+            .eq("setting_type", "sessions")
+
+            .lte("start_date", date)
+
+            .order(
+                "start_date",
+                {
+                    ascending: false
+                }
+            )
+
+            .limit(1)
+
+            .maybeSingle();
+
+
+        if (error) {
+
+            console.error(
+                "Sessions database error:",
+                error
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        if (!data) {
+
+            return res.status(404).json({
+
+                success: false,
+
+                message: "SESSIONS_NOT_FOUND"
+
+            });
+
+        }
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            start_date: data.start_date,
+
+            sessions: Array.isArray(data.sessions)
+                ? data.sessions
+                : []
+
+        });
+
+    } catch (error) {
+
+        console.error(
+            "Sessions server error:",
+            error
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "SERVER_ERROR"
+
+        });
+
+    }
+
+});
+
+
+// ========================================
 // ثبت فعالیت جدید
 // ========================================
 
@@ -261,7 +374,6 @@ app.get("/users", async (req, res) => {
     }
 
 });
-
 
 // ========================================
 // دریافت ظرفیت باقی‌مانده یک سانس
