@@ -745,6 +745,79 @@ app.post("/otp/verify", async (req, res) => {
     }
 });
 
+// ================================
+// ظرفیت باقی مانده رزرو
+// ================================
+
+app.get("/reservation/capacity", async (req, res) => {
+
+    try {
+
+        const { date, time } = req.query;
+
+        if (!date || !time) {
+            return res.status(400).json({
+                success: false,
+                message: "DATE_TIME_REQUIRED"
+            });
+        }
+
+        const { data, error } = await supabase
+            .from("reservations")
+            .select("companions")
+            .eq("date", date)
+            .eq("time", time);
+
+        if (error) {
+
+            console.error(
+                "❌ Capacity query error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "DATABASE_ERROR"
+            });
+
+        }
+
+        let reservedPeople = 0;
+
+        for (const reservation of data || []) {
+
+            reservedPeople +=
+                1 + Number(reservation.companions || 0);
+
+        }
+
+        const remaining =
+            Math.max(0, 10 - reservedPeople);
+
+        return res.json({
+            success: true,
+            capacity: 10,
+            reserved: reservedPeople,
+            remaining: remaining
+        });
+
+    } catch (error) {
+
+        console.error(
+            "❌ Capacity error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "SERVER_ERROR"
+        });
+
+    }
+
+});
+
+
 app.listen(
 
     PORT,
