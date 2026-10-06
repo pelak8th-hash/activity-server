@@ -3,20 +3,27 @@
 const express = require("express");
 const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
+const crypto = require("crypto");
 
 const app = express();
 
 const PORT = process.env.PORT || 8080;
 
 
+// ========================================
 // اتصال به Supabase
+// ========================================
+
 const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SECRET_KEY
 );
 
 
+// ========================================
 // تنظیمات سرور
+// ========================================
+
 app.use(cors());
 app.use(express.json());
 
@@ -44,7 +51,6 @@ app.post("/activity", async (req, res) => {
 
         console.log("Received:", req.body);
 
-
         const {
             first_name,
             last_name,
@@ -53,8 +59,6 @@ app.post("/activity", async (req, res) => {
             activity
         } = req.body;
 
-
-        // بررسی نوع اطلاعات
 
         if (
             typeof first_name !== "string" ||
@@ -75,8 +79,6 @@ app.post("/activity", async (req, res) => {
         }
 
 
-        // بررسی خالی نبودن اطلاعات
-
         if (
             first_name.trim() === "" ||
             last_name.trim() === "" ||
@@ -95,8 +97,6 @@ app.post("/activity", async (req, res) => {
 
         }
 
-
-        // ذخیره در Supabase
 
         const { data, error } = await supabase
 
@@ -128,15 +128,12 @@ app.post("/activity", async (req, res) => {
             .select();
 
 
-        // بررسی خطای Supabase
-
         if (error) {
 
             console.log(
                 "Supabase error:",
                 error
             );
-
 
             return res.status(500).json({
 
@@ -155,8 +152,6 @@ app.post("/activity", async (req, res) => {
         );
 
 
-        // پاسخ موفق
-
         return res.status(200).json({
 
             success: true,
@@ -174,7 +169,6 @@ app.post("/activity", async (req, res) => {
             "Server error:",
             error
         );
-
 
         return res.status(500).json({
 
@@ -216,15 +210,12 @@ app.get("/users", async (req, res) => {
             );
 
 
-        // بررسی خطای Supabase
-
         if (error) {
 
             console.log(
                 "Supabase error:",
                 error
             );
-
 
             return res.status(500).json({
 
@@ -243,8 +234,6 @@ app.get("/users", async (req, res) => {
         );
 
 
-        // ارسال کاربران به HTML
-
         return res.status(200).json({
 
             success: true,
@@ -261,6 +250,116 @@ app.get("/users", async (req, res) => {
             error
         );
 
+        return res.status(500).json({
+
+            success: false,
+
+            message: "SERVER_ERROR"
+
+        });
+
+    }
+
+});
+
+
+// ========================================
+// دریافت ظرفیت باقی‌مانده یک سانس
+// ========================================
+
+app.get("/reservation/capacity", async (req, res) => {
+
+    try {
+
+        const date =
+            String(req.query.date || "").trim();
+
+        const time =
+            String(req.query.time || "").trim();
+
+
+        if (!date || !time) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "MISSING_DATA"
+
+            });
+
+        }
+
+
+        const { data, error } = await supabase
+
+            .from("reservations")
+
+            .select("companions")
+
+            .eq("date", date)
+
+            .eq("time", time);
+
+
+        if (error) {
+
+            console.error(
+                "Capacity database error:",
+                error
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        let reservedPeople = 0;
+
+
+        for (const reservation of data || []) {
+
+            reservedPeople +=
+                1 +
+                Number(reservation.companions || 0);
+
+        }
+
+
+        const capacity = 10;
+
+        const remaining =
+            Math.max(
+                0,
+                capacity - reservedPeople
+            );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            capacity: capacity,
+
+            reserved: reservedPeople,
+
+            remaining: remaining
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Capacity server error:",
+            error
+        );
 
         return res.status(500).json({
 
@@ -288,7 +387,9 @@ app.post("/reservation", async (req, res) => {
         // ========================================
 
         const verificationToken =
-            String(req.body.verificationToken || "").trim();
+            String(
+                req.body.verificationToken || ""
+            ).trim();
 
 
         if (!verificationToken) {
@@ -305,7 +406,9 @@ app.post("/reservation", async (req, res) => {
 
 
         const verified =
-            verifiedStore.get(verificationToken);
+            verifiedStore.get(
+                verificationToken
+            );
 
 
         if (!verified) {
@@ -324,7 +427,8 @@ app.post("/reservation", async (req, res) => {
         // بررسی انقضای توکن
 
         if (
-            Date.now() > verified.expiresAt
+            Date.now() >
+            verified.expiresAt
         ) {
 
             verifiedStore.delete(
@@ -341,6 +445,7 @@ app.post("/reservation", async (req, res) => {
 
         }
 
+
         console.log(
             "Reservation received:",
             req.body
@@ -350,7 +455,6 @@ app.post("/reservation", async (req, res) => {
         const {
             first_name,
             last_name,
-            phone,
             gender,
             date,
             time,
@@ -359,12 +463,13 @@ app.post("/reservation", async (req, res) => {
         } = req.body;
 
 
+        // ========================================
         // بررسی نوع اطلاعات
+        // ========================================
 
         if (
             typeof first_name !== "string" ||
             typeof last_name !== "string" ||
-            typeof phone !== "string" ||
             typeof gender !== "string" ||
             typeof date !== "string" ||
             typeof time !== "string" ||
@@ -382,14 +487,14 @@ app.post("/reservation", async (req, res) => {
         }
 
 
-        // بررسی تعداد همراه
-
         const companionsNumber =
             Number(companions);
 
 
         if (
-            !Number.isInteger(companionsNumber) ||
+            !Number.isInteger(
+                companionsNumber
+            ) ||
             companionsNumber < 0 ||
             companionsNumber > 9
         ) {
@@ -405,12 +510,9 @@ app.post("/reservation", async (req, res) => {
         }
 
 
-        // بررسی خالی نبودن اطلاعات
-
         if (
             first_name.trim() === "" ||
             last_name.trim() === "" ||
-            phone.trim() === "" ||
             gender.trim() === "" ||
             date.trim() === "" ||
             time.trim() === "" ||
@@ -429,79 +531,128 @@ app.post("/reservation", async (req, res) => {
 
 
         // ========================================
-        // بررسی ظرفیت
+        // ثبت نهایی رزرو از طریق RPC
+        // کنترل همزمانی ظرفیت داخل Supabase
+        // انجام می‌شود.
         // ========================================
-        const { data: reservationResult, error: reservationError } =
-            await supabase.rpc("create_reservation", {
-                p_first_name: first_name,
-                p_last_name: last_name,
-                p_phone: verified.phone,
-                p_gender: gender,
-                p_date: date,
-                p_time: time,
-                p_activity: activity,
-                p_companions: companions
-            });
-    
+
+        const {
+            data: reservationResult,
+            error: reservationError
+        } = await supabase.rpc(
+            "create_reservation",
+            {
+
+                p_first_name:
+                    first_name.trim(),
+
+                p_last_name:
+                    last_name.trim(),
+
+                p_phone:
+                    verified.phone,
+
+                p_gender:
+                    gender.trim(),
+
+                p_date:
+                    date.trim(),
+
+                p_time:
+                    time.trim(),
+
+                p_activity:
+                    activity.trim(),
+
+                p_companions:
+                    companionsNumber
+
+            }
+        );
+
+
         if (reservationError) {
-            console.error("❌ RPC reservation error:", reservationError);
+
+            console.error(
+                "❌ RPC reservation error:",
+                reservationError
+            );
 
             return res.status(500).json({
+
                 success: false,
+
                 message: "DATABASE_ERROR"
+
             });
+
         }
+
+
+        // ========================================
+        // ظرفیت تکمیل شده
+        // ========================================
 
         if (
             reservationResult &&
             reservationResult.success === false &&
-            reservationResult.message === "CAPACITY_FULL"
+            reservationResult.message ===
+                "CAPACITY_FULL"
         ) {
+
             return res.status(409).json({
+
                 success: false,
+
                 message: "CAPACITY_FULL"
+
             });
+
         }
+
+
+        // ========================================
+        // نتیجه غیرمنتظره
+        // ========================================
 
         if (
             !reservationResult ||
             reservationResult.success !== true
         ) {
+
             console.error(
                 "❌ Unexpected reservation RPC result:",
                 reservationResult
             );
 
             return res.status(500).json({
+
                 success: false,
+
                 message: "RESERVATION_FAILED"
+
             });
+
         }
 
-        // توکن فقط بعد از ذخیره موفق رزرو مصرف می‌شود
-        verifiedStore.delete(verificationToken);
-
-        return res.status(200).json({
-            success: true,
-            message: "RESERVATION_SAVED",
-            data: reservationResult.data
-        });
 
         // ========================================
-        // Token یک‌بار مصرف است
+        // توکن فقط بعد از ثبت موفق مصرف می‌شود
         // ========================================
 
         verifiedStore.delete(
             verificationToken
         );
 
+
         return res.status(200).json({
 
             success: true,
 
             message: "RESERVATION_SAVED",
 
-            data: data
+            data:
+                reservationResult.data
 
         });
 
@@ -513,7 +664,6 @@ app.post("/reservation", async (req, res) => {
             error
         );
 
-
         return res.status(500).json({
 
             success: false,
@@ -526,297 +676,456 @@ app.post("/reservation", async (req, res) => {
 
 });
 
-// ========================================
-// شروع سرور
-// ========================================
 
-const crypto = require("crypto");
+// ========================================
+// OTP
+// ========================================
 
 // OTPهای موقت
 const otpStore = new Map();
 
-// توکن‌های تأیید موقت پس از تأیید OTP
+// توکن‌های تأیید موقت
 const verifiedStore = new Map();
+
+
+// ========================================
+// نرمال‌سازی شماره تلفن
+// ========================================
 
 function normalizePhone(phone) {
 
-    let value = String(phone || "")
-        .replace(/[۰-۹]/g, d => "۰۱۲۳۴۵۶۷۸۹".indexOf(d))
-        .replace(/[٠-٩]/g, d => "٠١٢٣٤٥٦٧٨٩".indexOf(d))
-        .replace(/\s+/g, "")
-        .trim();
+    let value =
+        String(phone || "")
 
-    // حذف +
-    if (value.startsWith("+")) {
-        value = value.substring(1);
+            .replace(
+                /[۰-۹]/g,
+                d =>
+                    "۰۱۲۳۴۵۶۷۸۹"
+                        .indexOf(d)
+            )
+
+            .replace(
+                /[٠-٩]/g,
+                d =>
+                    "٠١٢٣٤٥٦٧٨٩"
+                        .indexOf(d)
+            )
+
+            .replace(
+                /\s+/g,
+                ""
+            )
+
+            .trim();
+
+
+    if (
+        value.startsWith("+")
+    ) {
+
+        value =
+            value.substring(1);
+
     }
 
-    // تبدیل 09xxxxxxxxx به 989xxxxxxxxx
-    if (value.startsWith("09") && value.length === 11) {
-        value = "98" + value.substring(1);
+
+    if (
+        value.startsWith("09") &&
+        value.length === 11
+    ) {
+
+        value =
+            "98" +
+            value.substring(1);
+
     }
 
-    // اگر با 9 شروع شده باشد
-    else if (value.startsWith("9") && value.length === 10) {
-        value = "98" + value;
+    else if (
+        value.startsWith("9") &&
+        value.length === 10
+    ) {
+
+        value =
+            "98" +
+            value;
+
     }
+
 
     return value;
+
 }
 
 
+// ========================================
 // ارسال OTP
+// ========================================
+
 app.post("/otp/send", async (req, res) => {
+
     try {
-        const phone = normalizePhone(req.body.phone);
+
+        const phone =
+            normalizePhone(
+                req.body.phone
+            );
+
 
         if (!phone) {
+
             return res.status(400).json({
+
                 success: false,
-                message: "PHONE_REQUIRED"
+
+                message:
+                    "PHONE_REQUIRED"
+
             });
+
         }
 
+
         // تولید کد 6 رقمی
-        const otp = crypto.randomInt(100000, 1000000).toString();
+
+        const otp =
+            crypto
+                .randomInt(
+                    100000,
+                    1000000
+                )
+                .toString();
+
 
         // ذخیره OTP برای 5 دقیقه
-        otpStore.set(phone, {
-            otp,
-            expiresAt: Date.now() + 5 * 60 * 1000,
-            attempts: 0
-        });
 
-        const response = await fetch(
-            "https://safir.bale.ai/api/v3/send_message",
+        otpStore.set(
+            phone,
             {
-                method: "POST",
-                headers: {
-                    "api-access-key":
-                        process.env.BALE_API_ACCESS_KEY,
-                    "Content-Type":
-                        "application/json"
-                },
-                body: JSON.stringify({
-                    bot_id: Number(process.env.BALE_BOT_ID),
-                    phone_number: phone,
-                    message_data: {
-                        otp_message: {
-                            otp: otp
-                        }
-                    }
-                })
+
+                otp:
+
+                    otp,
+
+                expiresAt:
+
+                    Date.now() +
+                    5 * 60 * 1000,
+
+                attempts:
+
+                    0
+
             }
         );
 
-        const text = await response.text();
+
+        const response =
+            await fetch(
+                "https://safir.bale.ai/api/v3/send_message",
+                {
+
+                    method:
+                        "POST",
+
+                    headers:
+                        {
+
+                            "api-access-key":
+                                process.env
+                                    .BALE_API_ACCESS_KEY,
+
+                            "Content-Type":
+                                "application/json"
+
+                        },
+
+                    body:
+                        JSON.stringify(
+                            {
+
+                                bot_id:
+                                    Number(
+                                        process.env
+                                            .BALE_BOT_ID
+                                    ),
+
+                                phone_number:
+                                    phone,
+
+                                message_data:
+                                    {
+
+                                        otp_message:
+                                            {
+
+                                                otp:
+                                                    otp
+
+                                            }
+
+                                    }
+
+                            }
+                        )
+
+                }
+            );
+
+
+        const text =
+            await response.text();
+
 
         console.log(
             "Bale status:",
             response.status
         );
 
+
         console.log(
             "Bale response:",
             text
         );
 
+
         if (!response.ok) {
-            otpStore.delete(phone);
+
+            otpStore.delete(
+                phone
+            );
+
 
             return res.status(500).json({
+
                 success: false,
-                message: "BALE_ERROR"
+
+                message:
+                    "BALE_ERROR"
+
             });
+
         }
 
+
         return res.status(200).json({
+
             success: true,
-            message: "OTP_SENT"
+
+            message:
+                "OTP_SENT"
+
         });
 
+
     } catch (error) {
+
         console.log(
             "OTP send error:",
             error
         );
 
+
         return res.status(500).json({
+
             success: false,
-            message: "SERVER_ERROR"
+
+            message:
+                "SERVER_ERROR"
+
         });
+
     }
+
 });
 
 
+// ========================================
 // بررسی OTP
-app.post("/otp/verify", async (req, res) => {
-    try {
-        const phone = normalizePhone(req.body.phone);
-        const otp = String(req.body.otp || "").trim();
+// ========================================
 
-        if (!phone || !otp) {
+app.post("/otp/verify", async (req, res) => {
+
+    try {
+
+        const phone =
+            normalizePhone(
+                req.body.phone
+            );
+
+
+        const otp =
+            String(
+                req.body.otp || ""
+            ).trim();
+
+
+        if (
+            !phone ||
+            !otp
+        ) {
+
             return res.status(400).json({
+
                 success: false,
-                message: "MISSING_DATA"
+
+                message:
+                    "MISSING_DATA"
+
             });
+
         }
 
-        const saved = otpStore.get(phone);
+
+        const saved =
+            otpStore.get(
+                phone
+            );
+
 
         if (!saved) {
-            return res.status(400).json({
-                success: false,
-                message: "OTP_NOT_FOUND"
-            });
-        }
-
-        if (Date.now() > saved.expiresAt) {
-            otpStore.delete(phone);
 
             return res.status(400).json({
+
                 success: false,
-                message: "OTP_EXPIRED"
+
+                message:
+                    "OTP_NOT_FOUND"
+
             });
+
         }
+
+
+        if (
+            Date.now() >
+            saved.expiresAt
+        ) {
+
+            otpStore.delete(
+                phone
+            );
+
+            return res.status(400).json({
+
+                success: false,
+
+                message:
+                    "OTP_EXPIRED"
+
+            });
+
+        }
+
 
         saved.attempts++;
 
-        if (saved.attempts > 5) {
-            otpStore.delete(phone);
+
+        if (
+            saved.attempts > 5
+        ) {
+
+            otpStore.delete(
+                phone
+            );
 
             return res.status(429).json({
+
                 success: false,
-                message: "TOO_MANY_ATTEMPTS"
+
+                message:
+                    "TOO_MANY_ATTEMPTS"
+
             });
+
         }
 
-        if (otp !== saved.otp) {
+
+        if (
+            otp !== saved.otp
+        ) {
+
             return res.status(400).json({
+
                 success: false,
-                message: "INVALID_OTP"
+
+                message:
+                    "INVALID_OTP"
+
             });
+
         }
 
-    // OTP یکبار مصرف است
-    otpStore.delete(phone);
+
+        // OTP یکبار مصرف است
+
+        otpStore.delete(
+            phone
+        );
 
 
-    // ========================================
-    // ساخت توکن تأیید موقت
-    // ========================================
+        // ========================================
+        // ساخت Verification Token
+        // ========================================
 
-    const verificationToken =
-        crypto.randomBytes(32).toString("hex");
-
-
-    // ذخیره توکن برای 10 دقیقه
-    verifiedStore.set(verificationToken, {
-
-        phone: phone,
-
-        expiresAt:
-            Date.now() + 10 * 60 * 1000
-
-    });
+        const verificationToken =
+            crypto
+                .randomBytes(32)
+                .toString("hex");
 
 
-    // پاسخ موفق
-    return res.status(200).json({
+        verifiedStore.set(
+            verificationToken,
+            {
 
-        success: true,
+                phone:
+                    phone,
 
-        message: "USER_VERIFIED",
+                expiresAt:
+                    Date.now() +
+                    10 * 60 * 1000
 
-        verificationToken:
-            verificationToken
+            }
+        );
 
-    });
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                "USER_VERIFIED",
+
+            verificationToken:
+                verificationToken
+
+        });
+
+
     } catch (error) {
+
         console.log(
             "OTP verify error:",
             error
         );
 
-        return res.status(500).json({
-            success: false,
-            message: "SERVER_ERROR"
-        });
-    }
-});
-
-// ================================
-// ظرفیت باقی مانده رزرو
-// ================================
-
-app.get("/reservation/capacity", async (req, res) => {
-
-    try {
-
-        const { date, time } = req.query;
-
-        if (!date || !time) {
-            return res.status(400).json({
-                success: false,
-                message: "DATE_TIME_REQUIRED"
-            });
-        }
-
-        const { data, error } = await supabase
-            .from("reservations")
-            .select("companions")
-            .eq("date", date)
-            .eq("time", time);
-
-        if (error) {
-
-            console.error(
-                "❌ Capacity query error:",
-                error
-            );
-
-            return res.status(500).json({
-                success: false,
-                message: "DATABASE_ERROR"
-            });
-
-        }
-
-        let reservedPeople = 0;
-
-        for (const reservation of data || []) {
-
-            reservedPeople +=
-                1 + Number(reservation.companions || 0);
-
-        }
-
-        const remaining =
-            Math.max(0, 10 - reservedPeople);
-
-        return res.json({
-            success: true,
-            capacity: 10,
-            reserved: reservedPeople,
-            remaining: remaining
-        });
-
-    } catch (error) {
-
-        console.error(
-            "❌ Capacity error:",
-            error
-        );
 
         return res.status(500).json({
+
             success: false,
-            message: "SERVER_ERROR"
+
+            message:
+                "SERVER_ERROR"
+
         });
 
     }
 
 });
 
+
+// ========================================
+// شروع سرور
+// ========================================
 
 app.listen(
 
