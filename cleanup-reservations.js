@@ -10,6 +10,9 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+/**
+ * محاسبه تاریخ امروز بر اساس تقویم شمسی و منطقه زمانی ایران
+ */
 function getTodayJalali() {
     const parts = new Intl.DateTimeFormat("en-US", {
         timeZone: "Asia/Tehran",
@@ -48,9 +51,15 @@ async function main() {
     console.log("==================================");
 
     // شمارش رزروهای فعال پیش از انتقال
-    const { count: beforeCount, error: countError } = await supabase
+    const {
+        count: beforeCount,
+        error: countError
+    } = await supabase
         .from("reservations")
-        .select("*", { count: "exact", head: true });
+        .select("*", {
+            count: "exact",
+            head: true
+        });
 
     if (countError) {
         throw new Error(
@@ -60,22 +69,38 @@ async function main() {
 
     console.log("Active reservations before:", beforeCount);
 
-    // اجرای تابع انتقال امن در Supabase
-    const { data, error } = await supabase.rpc(
+    // اجرای تابع بایگانی در Supabase
+    const {
+        data,
+        error
+    } = await supabase.rpc(
         "archive_past_reservations",
-        { p_today: today }
+        {
+            p_today: today
+        }
     );
 
     if (error) {
-        throw new Error(`Archiving failed: ${error.message}`);
+        throw new Error(
+            `Archiving failed: ${error.message}`
+        );
     }
 
-    console.log("Reservations archived in this run:", data);
+    console.log(
+        "Reservations archived in this run:",
+        data
+    );
 
     // شمارش رزروهای فعال پس از انتقال
-    const { count: afterCount, error: afterError } = await supabase
+    const {
+        count: afterCount,
+        error: afterError
+    } = await supabase
         .from("reservations")
-        .select("*", { count: "exact", head: true });
+        .select("*", {
+            count: "exact",
+            head: true
+        });
 
     if (afterError) {
         throw new Error(
@@ -84,6 +109,7 @@ async function main() {
     }
 
     console.log("Active reservations after:", afterCount);
+    console.log("Iranian date used:", today);
     console.log("Archiving operation completed.");
 }
 
