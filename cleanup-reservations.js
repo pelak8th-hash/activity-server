@@ -11,7 +11,7 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 /**
- * محاسبه تاریخ امروز بر اساس تقویم شمسی و منطقه زمانی ایران
+ * محاسبه تاریخ امروز ایران به تقویم شمسی
  */
 function getTodayJalali() {
     const parts = new Intl.DateTimeFormat("en-US", {
@@ -48,9 +48,10 @@ async function main() {
     console.log("==================================");
     console.log("RESERVATION ARCHIVE");
     console.log("Iranian date:", today);
+    console.log("MODE: LIVE ARCHIVING");
     console.log("==================================");
 
-    // شمارش رزروهای فعال پیش از انتقال
+    // شمارش رزروهای فعال پیش از بایگانی
     const {
         count: beforeCount,
         error: countError
@@ -69,7 +70,7 @@ async function main() {
 
     console.log("Active reservations before:", beforeCount);
 
-    // اجرای تابع بایگانی در Supabase
+    // انتقال رزروهای قدیمی به جدول بایگانی
     const {
         data,
         error
@@ -86,12 +87,9 @@ async function main() {
         );
     }
 
-    console.log(
-        "Reservations archived in this run:",
-        data
-    );
+    console.log("Reservations archived in this run:", data);
 
-    // شمارش رزروهای فعال پس از انتقال
+    // شمارش رزروهای فعال پس از بایگانی
     const {
         count: afterCount,
         error: afterError
@@ -108,38 +106,7 @@ async function main() {
         );
     }
 
-    console.log("Active reservations after:", afterCount);
-    console.log("Iranian date used:", today);
-    console.log("Archiving operation completed.");
-}
-
-async function main() {
-    const today = getTodayJalali();
-
-    console.log("==================================");
-    console.log("RESERVATION ARCHIVE - SAFE TEST");
-    console.log("Iranian date:", today);
-    console.log("MODE: READ ONLY - NO ARCHIVING");
-    console.log("==================================");
-
-    // بررسی اتصال و خواندن تعداد رزروهای فعال
-    const {
-        count: activeCount,
-        error: activeError
-    } = await supabase
-        .from("reservations")
-        .select("*", {
-            count: "exact",
-            head: true
-        });
-
-    if (activeError) {
-        throw new Error(
-            `Could not read active reservations: ${activeError.message}`
-        );
-    }
-
-    // بررسی اتصال و خواندن تعداد رزروهای بایگانی‌شده
+    // شمارش رزروهای بایگانی‌شده
     const {
         count: archivedCount,
         error: archivedError
@@ -152,18 +119,17 @@ async function main() {
 
     if (archivedError) {
         throw new Error(
-            `Could not read archived reservations: ${archivedError.message}`
+            `Could not count archived reservations: ${archivedError.message}`
         );
     }
 
-    console.log("Iranian date calculated successfully:", today);
-    console.log("Active reservations:", activeCount);
-    console.log("Archived reservations:", archivedCount);
-    console.log("Connection test completed successfully.");
-    console.log("No reservations were changed.");
+    console.log("Active reservations after:", afterCount);
+    console.log("Total archived reservations:", archivedCount);
+    console.log("Iranian date used:", today);
+    console.log("Archiving operation completed.");
 }
 
 main().catch((error) => {
-    console.error("Safe test failed:", error.message);
+    console.error("Archiving failed:", error.message);
     process.exitCode = 1;
 });
