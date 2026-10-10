@@ -113,7 +113,57 @@ async function main() {
     console.log("Archiving operation completed.");
 }
 
+async function main() {
+    const today = getTodayJalali();
+
+    console.log("==================================");
+    console.log("RESERVATION ARCHIVE - SAFE TEST");
+    console.log("Iranian date:", today);
+    console.log("MODE: READ ONLY - NO ARCHIVING");
+    console.log("==================================");
+
+    // بررسی اتصال و خواندن تعداد رزروهای فعال
+    const {
+        count: activeCount,
+        error: activeError
+    } = await supabase
+        .from("reservations")
+        .select("*", {
+            count: "exact",
+            head: true
+        });
+
+    if (activeError) {
+        throw new Error(
+            `Could not read active reservations: ${activeError.message}`
+        );
+    }
+
+    // بررسی اتصال و خواندن تعداد رزروهای بایگانی‌شده
+    const {
+        count: archivedCount,
+        error: archivedError
+    } = await supabase
+        .from("reservation_delete")
+        .select("*", {
+            count: "exact",
+            head: true
+        });
+
+    if (archivedError) {
+        throw new Error(
+            `Could not read archived reservations: ${archivedError.message}`
+        );
+    }
+
+    console.log("Iranian date calculated successfully:", today);
+    console.log("Active reservations:", activeCount);
+    console.log("Archived reservations:", archivedCount);
+    console.log("Connection test completed successfully.");
+    console.log("No reservations were changed.");
+}
+
 main().catch((error) => {
-    console.error("Archiving failed:", error.message);
+    console.error("Safe test failed:", error.message);
     process.exitCode = 1;
 });
