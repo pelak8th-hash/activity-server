@@ -11,7 +11,6 @@ if (!supabaseUrl || !supabaseKey) {
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 function getTodayJalali() {
-    // دریافت تاریخ میلادی امروز به وقت ایران
     const parts = new Intl.DateTimeFormat("en-US", {
         timeZone: "Asia/Tehran",
         year: "numeric",
@@ -43,13 +42,16 @@ function getTodayJalali() {
 async function main() {
     const today = getTodayJalali();
 
+    console.log("==================================");
+    console.log("RESERVATION CLEANUP - DRY RUN");
     console.log("Iranian date:", today);
-    console.log("Checking past reservations...");
+    console.log("MODE: REPORT ONLY - NO DELETIONS");
+    console.log("==================================");
 
-    // دریافت رزروها به‌صورت صفحه‌بندی‌شده
     const pageSize = 500;
     let offset = 0;
-    const oldReservationIds = [];
+    let totalReservations = 0;
+    let totalPastReservations = 0;
 
     while (true) {
         const { data, error } = await supabase
@@ -68,17 +70,24 @@ async function main() {
             break;
         }
 
-        for (const reservation of data) {
+        totalReservations += data.length;
+
+        const pastReservations = data.filter((reservation) => {
             const date = reservation.date;
 
-            // فقط تاریخ‌های شمسی با قالب معتبر بررسی می‌شوند.
-            if (
+            return (
                 typeof date === "string" &&
                 /^\d{4}\/\d{2}\/\d{2}$/.test(date) &&
                 date < today
-            ) {
-                oldReservationIds.push(reservation.id);
-            }
+            );
+        });
+
+        totalPastReservations += pastReservations.length;
+
+        for (const reservation of pastReservations) {
+            console.log(
+                `PAST RESERVATION: id=${reservation.id}, date=${reservation.date}`
+            );
         }
 
         if (data.length < pageSize) {
@@ -88,49 +97,14 @@ async function main() {
         offset += pageSize;
     }
 
-    console.log(
-        `Past reservations found: ${oldReservationIds.length}`
-    );
-
-    if (oldReservationIds.length === 0) {
-        console.log("Nothing to delete.");
-        return;
-    }
-
-    // حذف گروهی رزروهای گذشته
-    const batchSize = 100;
-
-    for (
-        let i = 0;
-        i < oldReservationIds.length;
-        i += batchSize
-    ) {
-        const batch = oldReservationIds.slice(
-            i,
-            i + batchSize
-        );
-
-        const { data, error } = await supabase
-            .from("reservations")
-            .delete()
-            .in("id", batch)
-            .select("id");
-
-        if (error) {
-            throw new Error(
-                `Deletion failed: ${error.message}`
-            );
-        }
-
-        console.log(
-            `Deleted ${data.length} reservations in this batch.`
-        );
-    }
-
-    console.log("Cleanup completed successfully.");
+    console.log("----------------------------------");
+    console.log("Total reservations checked:", totalReservations);
+    console.log("Past reservations found:", totalPastReservations);
+    console.log("No reservations were deleted.");
+    console.log("DRY RUN COMPLETED");
 }
 
 main().catch((error) => {
-    console.error("Cleanup failed:", error.message);
+    console.error("Dry run failed:", error.message);
     process.exitCode = 1;
 });
