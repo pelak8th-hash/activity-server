@@ -32,79 +32,62 @@ function getTodayJalali() {
         values.day
     );
 
-    const year = String(jalali.jy);
-    const month = String(jalali.jm).padStart(2, "0");
-    const day = String(jalali.jd).padStart(2, "0");
-
-    return `${year}/${month}/${day}`;
+    return [
+        jalali.jy,
+        String(jalali.jm).padStart(2, "0"),
+        String(jalali.jd).padStart(2, "0")
+    ].join("/");
 }
 
 async function main() {
     const today = getTodayJalali();
 
     console.log("==================================");
-    console.log("RESERVATION CLEANUP - DRY RUN");
+    console.log("RESERVATION ARCHIVE");
     console.log("Iranian date:", today);
-    console.log("MODE: REPORT ONLY - NO DELETIONS");
     console.log("==================================");
 
-    const pageSize = 500;
-    let offset = 0;
-    let totalReservations = 0;
-    let totalPastReservations = 0;
+    // شمارش رزروهای فعال پیش از انتقال
+    const { count: beforeCount, error: countError } = await supabase
+        .from("reservations")
+        .select("*", { count: "exact", head: true });
 
-    while (true) {
-        const { data, error } = await supabase
-            .from("reservations")
-            .select("id, date")
-            .order("id", { ascending: true })
-            .range(offset, offset + pageSize - 1);
-
-        if (error) {
-            throw new Error(
-                `Could not fetch reservations: ${error.message}`
-            );
-        }
-
-        if (!data || data.length === 0) {
-            break;
-        }
-
-        totalReservations += data.length;
-
-        const pastReservations = data.filter((reservation) => {
-            const date = reservation.date;
-
-            return (
-                typeof date === "string" &&
-                /^\d{4}\/\d{2}\/\d{2}$/.test(date) &&
-                date < today
-            );
-        });
-
-        totalPastReservations += pastReservations.length;
-
-        for (const reservation of pastReservations) {
-            console.log(
-                `PAST RESERVATION: id=${reservation.id}, date=${reservation.date}`
-            );
-        }
-
-        if (data.length < pageSize) {
-            break;
-        }
-
-        offset += pageSize;
+    if (countError) {
+        throw new Error(
+            `Could not count active reservations: ${countError.message}`
+        );
     }
 
-    console.log("----------------------------------");
-    console.log("Total reservations checked:", totalReservations);
-    console.log("Past reservations found:", totalPastReservations);
-    console.log("No reservations were deleted.");
-    console.log("DRY RUN COMPLETED");
+    console.log("Active reservations before:", beforeCount);
+
+    // اجرای تابع انتقال امن در Supabase
+    const { data, error } = await supabase.rpc(
+        "archive_past_reservations",
+        { p_today: today }
+    );
+
+    if (error) {
+        throw new Error(`Archiving failed: ${error.message}`);
+    }
+
+    console.log("Reservations archived in this run:", data);
+
+    // شمارش رزروهای فعال پس از انتقال
+    const { count: afterCount, error: afterError } = await supabase
+        .from("reservations")
+        .select("*", { count: "exact", head: true });
+
+    if (afterError) {
+        throw new Error(
+            `Could not count active reservations after archiving: ${afterError.message}`
+        );
+    }
+
+    console.log("Active reservations after:", afterCount);
+    console.log("Archiving operation completed.");
 }
 
 main().catch((error) => {
-    console.error("Dry run failed:", error.message);
+    console.error("Archiving failed:", error.message);
     process.exitCode = 1;
 });
