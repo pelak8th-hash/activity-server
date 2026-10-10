@@ -1,12 +1,12 @@
-name: Check Old Reservations
+name: Archive Old Reservations
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 20 * * *"
+    - cron: "30 19 * * *"
 
 jobs:
-  check-reservations:
+  archive-reservations:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,7 +21,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Check old reservations
+      - name: Archive old reservations
         run: node cleanup-reservations.js
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
