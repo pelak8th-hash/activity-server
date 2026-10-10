@@ -1,81 +1,136 @@
-// ========================================
-// بررسی رزروهای قدیمی
-// حالت آزمایشی: هیچ اطلاعاتی حذف نمی‌شود
-// ========================================
-
 const { createClient } = require("@supabase/supabase-js");
 const { toJalaali } = require("jalaali-js");
 
-// اتصال به Supabase
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SECRET_KEY
-);
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase environment variables are missing.");
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+function getTodayJalali() {
+    // دریافت تاریخ میلادی امروز به وقت ایران
+    const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "Asia/Tehran",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric"
+    }).formatToParts(new Date());
+
+    const values = {};
+
+    for (const part of parts) {
+        if (part.type !== "literal") {
+            values[part.type] = Number(part.value);
+        }
+    }
+
+    const jalali = toJalaali(
+        values.year,
+        values.month,
+        values.day
+    );
+
+    const year = String(jalali.jy);
+    const month = String(jalali.jm).padStart(2, "0");
+    const day = String(jalali.jd).padStart(2, "0");
+
+    return `${year}/${month}/${day}`;
+}
 
 async function main() {
-    try {
-        // تاریخ امروز ایران
-        const iranDate = new Date(
-            new Date().toLocaleString("en-US", {
-                timeZone: "Asia/Tehran"
-            })
-        );
+    const today = getTodayJalali();
 
-        const today = toJalaali(
-            iranDate.getFullYear(),
-            iranDate.getMonth() + 1,
-            iranDate.getDate()
-        );
+    console.log("Iranian date:", today);
+    console.log("Checking past reservations...");
 
-        const todayJalali = [
-            today.jy,
-            String(today.jm).padStart(2, "0"),
-            String(today.jd).padStart(2, "0")
-        ].join("/");
+    // دریافت رزروها به‌صورت صفحه‌بندی‌شده
+    const pageSize = 500;
+    let offset = 0;
+    const oldReservationIds = [];
 
-        console.log("امروز به تاریخ شمسی:", todayJalali);
-
-        // دریافت رزروها
+    while (true) {
         const { data, error } = await supabase
             .from("reservations")
-            .select("id, date, time")
-            .limit(1000);
+            .select("id, date")
+            .order("id", { ascending: true })
+            .range(offset, offset + pageSize - 1);
 
         if (error) {
-            throw error;
-        }
-
-        const oldReservations = (data || []).filter((reservation) => {
-            const date = reservation.date;
-
-            // فقط تاریخ‌هایی با قالب معتبر بررسی می‌شوند
-            if (!/^\d{4}\/\d{2}\/\d{2}$/.test(date || "")) {
-                console.log("تاریخ نامعتبر؛ نادیده گرفته شد:", date);
-                return false;
-            }
-
-            // قالب YYYY/MM/DD باعث مقایسه صحیح رشته‌ای می‌شود
-            return date < todayJalali;
-        });
-
-        console.log("تعداد رزروهای بررسی‌شده:", data.length);
-        console.log("تعداد رزروهای قدیمی:", oldReservations.length);
-
-        for (const reservation of oldReservations) {
-            console.log(
-                "رزرو قدیمی:",
-                reservation.id,
-                reservation.date,
-                reservation.time
+            throw new Error(
+                `Could not fetch reservations: ${error.message}`
             );
         }
 
-        console.log("حالت آزمایشی فعال است؛ هیچ رزروی حذف نشد.");
+        if (!data || data.length === 0) {
+            break;
+        }
 
-    } catch (error) {
-        console.error("خطا در بررسی رزروها:", error);
-        process.exitCode = 1;
+        for (const reservation of data) {
+            const date = reservation.date;
+
+            // فقط تاریخ‌های شمسی با قالب معتبر بررسی می‌شوند.
+            if (
+                typeof date === "string" &&
+                /^\d{4}\/\d{2}\/\d{2}$/.test(date) &&
+                date < today
+            ) {
+                oldReservationIds.push(reservation.id);
+            }
+        }
+
+        if (data.length < pageSize) {
+            break;
+        }
+
+        offset += pageSize;
     }
+
+    console.log(
+        `Past reservations found: ${oldReservationIds.length}`
+    );
+
+    if (oldReservationIds.length === 0) {
+        console.log("Nothing to delete.");
+        return;
+    }
+
+    // حذف گروهی رزروهای گذشته
+    const batchSize = 100;
+
+    for (
+        let i = 0;
+        i < oldReservationIds.length;
+        i += batchSize
+    ) {
+        const batch = oldReservationIds.slice(
+            i,
+            i + batchSize
+        );
+
+        const { data, error } = await supabase
+            .from("reservations")
+            .delete()
+            .in("id", batch)
+            .select("id");
+
+        if (error) {
+            throw new Error(
+                `Deletion failed: ${error.message}`
+            );
+        }
+
+        console.log(
+            `Deleted ${data.length} reservations in this batch.`
+        );
+    }
+
+    console.log("Cleanup completed successfully.");
 }
 
-main();
+main().catch((error) => {
+    console.error("Cleanup failed:", error.message);
+    process.exitCode = 1;
+});
