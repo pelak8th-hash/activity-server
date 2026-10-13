@@ -1234,6 +1234,81 @@ app.post("/otp/verify", async (req, res) => {
 
 });
 
+// ========================================
+// دریافت رزروهای بازه زمانی برای پنل مدیریت
+// ========================================
+
+app.get("/reservation/admin", async (req, res) => {
+    try {
+        const startDate = String(
+            req.query.start_date || ""
+        ).trim();
+
+        const endDate = String(
+            req.query.end_date || ""
+        ).trim();
+
+        const datePattern = /^\d{4}\/\d{2}\/\d{2}$/;
+
+        if (
+            !datePattern.test(startDate) ||
+            !datePattern.test(endDate) ||
+            startDate > endDate
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "INVALID_DATE_RANGE"
+            });
+        }
+
+        const { data, error } = await supabase
+            .from("reservations")
+            .select(`
+                first_name,
+                last_name,
+                phone,
+                gender,
+                date,
+                time,
+                activity,
+                companions,
+                created_at
+            `)
+            .gte("date", startDate)
+            .lte("date", endDate)
+            .order("date", { ascending: true })
+            .order("time", { ascending: true })
+            .order("created_at", { ascending: true });
+
+        if (error) {
+            console.error(
+                "Admin reservations error:",
+                error
+            );
+
+            return res.status(500).json({
+                success: false,
+                message: "DATABASE_ERROR"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            reservations: data || []
+        });
+
+    } catch (error) {
+        console.error(
+            "Admin reservations server error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "SERVER_ERROR"
+        });
+    }
+});
 
 // ========================================
 // شروع سرور
