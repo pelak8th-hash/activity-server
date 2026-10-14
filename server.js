@@ -1311,6 +1311,115 @@ app.get("/reservation/admin", async (req, res) => {
 });
 
 // ========================================
+// درگاه پرداخت آزمایشی
+// بدون دریافت پول واقعی
+// ========================================
+
+const testPayments = new Map();
+
+const TEST_RESERVATION_AMOUNT = 1000;
+
+// ایجاد پرداخت آزمایشی
+app.post("/payment-test/create", (req, res) => {
+    try {
+        const verificationToken = String(
+            req.body.verificationToken || ""
+        ).trim();
+
+        const verified = verifiedStore.get(
+            verificationToken
+        );
+
+        if (
+            !verified ||
+            Date.now() > verified.expiresAt
+        ) {
+            return res.status(401).json({
+                success: false,
+                message: "INVALID_VERIFICATION"
+            });
+        }
+
+        const paymentId = crypto
+            .randomBytes(18)
+            .toString("hex");
+
+        testPayments.set(paymentId, {
+            status: "pending",
+            verificationToken,
+            phone: verified.phone,
+            expiresAt: Date.now() + 10 * 60 * 1000
+        });
+
+        return res.status(201).json({
+            success: true,
+            testMode: true,
+            paymentId,
+            amount: TEST_RESERVATION_AMOUNT,
+            currency: "IRR_TEST",
+            message: "TEST_PAYMENT_CREATED"
+        });
+
+    } catch (error) {
+        console.error(
+            "Test payment create error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "SERVER_ERROR"
+        });
+    }
+});
+
+
+// ========================================
+// تأیید پرداخت آزمایشی
+// ========================================
+
+app.post("/payment-test/confirm", (req, res) => {
+    try {
+        const paymentId = String(
+            req.body.paymentId || ""
+        ).trim();
+
+        const payment = testPayments.get(paymentId);
+
+        if (
+            !payment ||
+            Date.now() > payment.expiresAt ||
+            payment.status !== "pending"
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "TEST_PAYMENT_NOT_FOUND"
+            });
+        }
+
+        payment.status = "paid";
+        payment.confirmedAt = Date.now();
+
+        return res.status(200).json({
+            success: true,
+            testMode: true,
+            message: "TEST_PAYMENT_CONFIRMED"
+        });
+
+    } catch (error) {
+        console.error(
+            "Test payment confirm error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            message: "SERVER_ERROR"
+        });
+    }
+});
+
+// ========================================
 // شروع سرور
 // ========================================
 
