@@ -27,6 +27,38 @@ const supabase = createClient(
 app.use(cors());
 app.use(express.json());
 
+// ثبت زمان و نتیجهٔ درخواست‌ها برای تشخیص تأخیر Railway، شبکه و Supabase
+app.use((req, res, next) => {
+    const startedAt = Date.now();
+
+    const requestId = crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${startedAt}-${Math.random().toString(16).slice(2)}`;
+
+    res.setHeader("X-Request-Id", requestId);
+
+    const monitoredPaths = [
+        "/reservation/sessions",
+        "/reservation/capacity",
+        "/"
+    ];
+
+    if (monitoredPaths.includes(req.path)) {
+        console.log(
+            `[REQ START] id=${requestId} method=${req.method} path=${req.originalUrl}`
+        );
+    }
+
+    res.on("finish", () => {
+        if (monitoredPaths.includes(req.path)) {
+            console.log(
+                `[REQ END] id=${requestId} path=${req.path} status=${res.statusCode} duration_ms=${Date.now() - startedAt}`
+            );
+        }
+    });
+
+    next();
+});
 
 // ========================================
 // تست سرور
@@ -66,6 +98,9 @@ app.get("/reservation/sessions", async (req, res) => {
 
         }
 
+        const sessionsQueryStartedAt = Date.now();
+        console.log(`[SESSIONS DB START] date=${date}`);
+        
         const {
             data,
             error
@@ -90,7 +125,10 @@ app.get("/reservation/sessions", async (req, res) => {
 
             .maybeSingle();
 
-
+        console.log(
+            `[SESSIONS DB END] date=${date} duration_ms=${Date.now() - sessionsQueryStartedAt} error=${error ? "yes" : "no"}`
+        );
+        
         if (error) {
 
             console.error(
@@ -403,16 +441,21 @@ app.get("/reservation/capacity", async (req, res) => {
         }
 
 
+        const capacityQueryStartedAt = Date.now();
+
+        console.log(
+            `[CAPACITY DB START] date=${date} time=${time}`
+        );
+
         const { data, error } = await supabase
-
             .from("reservations")
-
             .select("companions")
-
             .eq("date", date)
-
             .eq("time", time);
 
+        console.log(
+            `[CAPACITY DB END] date=${date} time=${time} duration_ms=${Date.now() - capacityQueryStartedAt} error=${error ? "yes" : "no"} rows=${Array.isArray(data) ? data.length : 0}`
+        );
 
         if (error) {
 
