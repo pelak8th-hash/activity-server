@@ -206,7 +206,51 @@ function reservationCutoffPassed(jalaliDate, sessionTime) {
     return start.getTime() - nowDate.getTime() <= 0;
 }
 
+
 async function getSessionSettingsForDate(date) {
+    // ابتدا بررسی می‌کنیم آیا برای همین تاریخ، تنظیم ویژه وجود دارد.
+    // تنظیمات special_date از sessions کاملاً مستقل هستند.
+    const { data: special, error: specialError } = await supabase
+        .from("activity_types")
+        .select("name,start_date,category,sessions,points,max_companions")
+        .eq("setting_type", "special_date")
+        .eq("start_date", date)
+        .limit(1)
+        .maybeSingle();
+
+    if (specialError) throw specialError;
+
+    if (special) {
+        const parsedCapacity = Number(special.points);
+        const parsedMaxCompanions = Number(special.max_companions);
+
+        return {
+            start_date: special.start_date,
+
+            sessions: Array.isArray(special.sessions)
+                ? special.sessions
+                : [],
+
+            capacity:
+                Number.isFinite(parsedCapacity) && parsedCapacity > 0
+                    ? Math.floor(parsedCapacity)
+                    : 10,
+
+            is_special: true,
+
+            title: String(
+                special.category || special.name || ""
+            ).trim(),
+
+            max_companions:
+                Number.isInteger(parsedMaxCompanions) &&
+                parsedMaxCompanions >= 0
+                    ? parsedMaxCompanions
+                    : 9
+        };
+    }
+
+    // اگر تاریخ ویژه‌ای پیدا نشد، تنظیمات عادی را مثل قبل می‌خوانیم.
     const { data, error } = await supabase
         .from("activity_types")
         .select("sessions,start_date,points")
@@ -228,10 +272,15 @@ async function getSessionSettingsForDate(date) {
 
     return {
         start_date: data.start_date,
+
         sessions: Array.isArray(data.sessions)
             ? data.sessions
             : [],
-        capacity
+
+        capacity,
+        is_special: false,
+        title: "",
+        max_companions: 9
     };
 }
 
@@ -274,11 +323,15 @@ app.get("/reservation/sessions", async (req, res) => {
             });
         }
 
+
         return res.status(200).json({
             success: true,
             start_date: data.start_date,
             sessions: data.sessions,
-            capacity: data.capacity
+            capacity: data.capacity,
+            is_special: data.is_special === true,
+            title: data.title || "",
+            max_companions: data.max_companions
         });
 
     } catch (error) {
