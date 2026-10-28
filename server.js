@@ -203,8 +203,7 @@ function reservationCutoffPassed(jalaliDate, sessionTime) {
         nowParts.minute
     ));
 
-    return start.getTime() - nowDate.getTime()
-        <= 30 * 60 * 1000;
+    return start.getTime() - nowDate.getTime() <= 0;
 }
 
 async function getSessionSettingsForDate(date) {
