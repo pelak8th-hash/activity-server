@@ -750,6 +750,7 @@ app.post("/reservation", async (req, res) => {
             companions
         } = req.body;
 
+
         // بررسی نوع اطلاعات
         if (
             typeof first_name !== "string" ||
@@ -765,11 +766,18 @@ app.post("/reservation", async (req, res) => {
             });
         }
 
+        // یکسان‌سازی تاریخ و بررسی قالب آن
+        const reservationDate = normalizeDigits(date);
+
+        if (!/^\d{4}\/\d{2}\/\d{2}$/.test(reservationDate)) {
+            return res.status(400).json({
+                success: false,
+                message: "INVALID_DATE"
+            });
+        }
 
         const companionsNumber = Number(companions);
 
-        const reservationDate = String(date || "").trim();
-    
         const sessionSettings =
             await getSessionSettingsForDate(reservationDate);
 
@@ -781,7 +789,6 @@ app.post("/reservation", async (req, res) => {
         }
 
         const maxCompanions = sessionSettings.max_companions;
-
 
         if (
             !Number.isInteger(companionsNumber) ||
@@ -798,7 +805,6 @@ app.post("/reservation", async (req, res) => {
             !first_name.trim() ||
             !last_name.trim() ||
             !gender.trim() ||
-            !date.trim() ||
             !time.trim() ||
             !activity.trim()
         ) {
@@ -807,6 +813,7 @@ app.post("/reservation", async (req, res) => {
                 message: "MISSING_DATA"
             });
         }
+
 
         // جلوگیری از رزرو در ۳۰ دقیقه پایانی پیش از شروع سانس
         if (reservationCutoffPassed(date, time)) {
@@ -1547,17 +1554,33 @@ app.post("/payment-test/complete", async (req, res) => {
             req.body.companions
         );
 
+
+        // بررسی و یکسان‌سازی تاریخ رزرو
+        const reservationDate = normalizeDigits(
+            req.body.date
+        );
+
+        if (!/^\d{4}\/\d{2}\/\d{2}$/.test(reservationDate)) {
+            payment.status = "paid";
+
+            return res.status(400).json({
+                success: false,
+                message: "INVALID_DATE"
+            });
+        }
+
         // بررسی سقف همراهان بر اساس تنظیمات تاریخ رزرو
-        const reservationDate = String(
-            req.body.date || ""
-        ).trim();
-
-
         const sessionSettings =
             await getSessionSettingsForDate(reservationDate);
 
         if (!sessionSettings) {
             payment.status = "paid";
+
+            return res.status(409).json({
+                success: false,
+                message: "SESSIONS_NOT_FOUND"
+            });
+        }
 
             return res.status(409).json({
                 success: false,
