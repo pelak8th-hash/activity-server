@@ -1582,11 +1582,6 @@ app.post("/payment-test/complete", async (req, res) => {
             });
         }
 
-            return res.status(409).json({
-                success: false,
-                message: "SESSIONS_NOT_FOUND"
-            });
-        }
 
         const maxCompanions = sessionSettings.max_companions;
 
