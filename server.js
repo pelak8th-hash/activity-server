@@ -237,7 +237,7 @@ async function getSessionSettingsForDate(date) {
             capacity,
             is_special: true,
             title: String(
-                special.category || special.name || ""
+                special.name || special.category || ""
             ).trim(),
             max_companions: Math.max(0, capacity - 1)
         };
