@@ -717,10 +717,6 @@ app.get("/reservation/capacity", async (req, res) => {
 // ثبت رزرو جدید
 // ========================================
 
-// ========================================
-// ثبت رزرو جدید
-// ========================================
-
 app.post("/reservation", async (req, res) => {
     try {
         // بررسی Verification Token
@@ -822,16 +818,13 @@ app.post("/reservation", async (req, res) => {
             });
         }
 
-        // دریافت ظرفیت تنظیم‌شده برای تاریخ
-        const sessionSettings =
-            await getSessionSettingsForDate(date);
-
+        // استفاده از تنظیمات تاریخ که قبلاً دریافت شده است
         if (!sessionSettings) {
             return res.status(409).json({
                 success: false,
                 message: "SESSIONS_NOT_FOUND"
             });
-        }
+        }}
 
         // محاسبه ظرفیت مصرف‌شده
         const {
@@ -1593,10 +1586,7 @@ app.post("/payment-test/complete", async (req, res) => {
             });
         }
 
-        // دریافت ظرفیت تنظیم‌شده
-        const sessionSettings =
-            await getSessionSettingsForDate(date);
-
+        // استفاده از تنظیمات تاریخ که قبلاً دریافت شده است
         if (!sessionSettings) {
             payment.status = "paid";
 
@@ -1605,7 +1595,6 @@ app.post("/payment-test/complete", async (req, res) => {
                 message: "SESSIONS_NOT_FOUND"
             });
         }
-
         // دریافت رزروهای فعلی این سانس
         const {
             data: currentReservations,
@@ -1798,214 +1787,6 @@ app.post("/payment-test/confirm", (req, res) => {
     }
 });
 
-// ========================================
-// تکمیل رزرو آزمایشی فقط با پرداخت تأییدشده
-// ========================================
-
-app.post("/payment-test/complete", async (req, res) => {
-    let payment = null;
-
-    try {
-        const paymentId = String(
-            req.body.paymentId || ""
-        ).trim();
-
-        const verificationToken = String(
-            req.body.verificationToken || ""
-        ).trim();
-
-        payment = testPayments.get(paymentId);
-
-        // بررسی وجود، انقضا و وضعیت پرداخت
-        if (
-            !payment ||
-            Date.now() > payment.expiresAt ||
-            payment.status !== "paid"
-        ) {
-            return res.status(400).json({
-                success: false,
-                message: "TEST_PAYMENT_NOT_CONFIRMED"
-            });
-        }
-
-        // بررسی تطابق توکن با پرداخت
-        if (
-            payment.verificationToken !== verificationToken
-        ) {
-            return res.status(401).json({
-                success: false,
-                message: "INVALID_VERIFICATION"
-            });
-        }
-
-        // بررسی اعتبار تأیید شماره تلفن
-        const verified = verifiedStore.get(
-            verificationToken
-        );
-
-        if (
-            !verified ||
-            Date.now() > verified.expiresAt ||
-            verified.phone !== payment.phone
-        ) {
-            return res.status(401).json({
-                success: false,
-                message: "VERIFICATION_EXPIRED"
-            });
-        }
-
-        // جلوگیری از استفاده هم‌زمان از یک پرداخت
-        payment.status = "processing";
-
-        const {
-            first_name,
-            last_name,
-            gender,
-            date,
-            time,
-            activity
-        } = req.body;
-
-        const companionsNumber = Number(
-            req.body.companions
-        );
-
-        // بررسی اطلاعات رزرو
-        if (
-            [
-                first_name,
-                last_name,
-                gender,
-                date,
-                time,
-                activity
-            ].some(
-                value =>
-                    typeof value !== "string" ||
-                    !value.trim()
-            )
-        ) {
-            payment.status = "paid";
-
-            return res.status(400).json({
-                success: false,
-                message: "MISSING_DATA"
-            });
-        }
-
-        // تعداد همراهان باید عدد صحیح بین صفر تا ۹ باشد
-        if (
-            !Number.isInteger(companionsNumber) ||
-            companionsNumber < 0 ||
-            companionsNumber > 9
-        ) {
-            payment.status = "paid";
-
-            return res.status(400).json({
-                success: false,
-                message: "INVALID_COMPANIONS"
-            });
-        }
-
-        // ثبت رزرو در Supabase
-        const {
-            data: reservationResult,
-            error: reservationError
-        } = await supabase.rpc(
-            "create_reservation",
-            {
-                p_first_name: first_name.trim(),
-                p_last_name: last_name.trim(),
-                p_phone: verified.phone,
-                p_gender: gender.trim(),
-                p_date: date.trim(),
-                p_time: time.trim(),
-                p_activity: activity.trim(),
-                p_companions: companionsNumber
-            }
-        );
-
-        // خطای پایگاه داده
-        if (reservationError) {
-            console.error(
-                "Test reservation RPC error:",
-                reservationError
-            );
-
-            payment.status = "paid";
-
-            return res.status(500).json({
-                success: false,
-                message: "DATABASE_ERROR"
-            });
-        }
-
-        // ظرفیت سانس تکمیل شده است
-        if (
-            reservationResult &&
-            reservationResult.success === false &&
-            reservationResult.message === "CAPACITY_FULL"
-        ) {
-            payment.status = "paid";
-
-            return res.status(409).json({
-                success: false,
-                message: "CAPACITY_FULL"
-            });
-        }
-
-        // بررسی نتیجه غیرمنتظره
-        if (
-            !reservationResult ||
-            reservationResult.success !== true
-        ) {
-            payment.status = "paid";
-
-            console.error(
-                "Unexpected test reservation RPC result:",
-                reservationResult
-            );
-
-            return res.status(500).json({
-                success: false,
-                message: "RESERVATION_FAILED"
-            });
-        }
-
-        // رزرو موفق است؛ پرداخت آزمایشی دیگر قابل استفاده نیست
-        payment.status = "consumed";
-        payment.reservationCreatedAt = Date.now();
-
-        // توکن تأیید شماره تلفن نیز یک‌بارمصرف می‌شود
-        verifiedStore.delete(verificationToken);
-
-        return res.status(200).json({
-            success: true,
-            testMode: true,
-            message: "RESERVATION_SAVED",
-            data: reservationResult.data
-        });
-
-    } catch (error) {
-        // در صورت خطا، امکان تلاش مجدد باقی بماند
-        if (
-            payment &&
-            payment.status === "processing"
-        ) {
-            payment.status = "paid";
-        }
-
-        console.error(
-            "Test payment completion error:",
-            error
-        );
-
-        return res.status(500).json({
-            success: false,
-            message: "SERVER_ERROR"
-        });
-    }
-});
 
 // ========================================
 // شروع سرور
