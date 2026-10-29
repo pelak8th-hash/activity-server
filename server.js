@@ -381,7 +381,7 @@ app.get("/reservation/special-dates", async (req, res) => {
             special_dates: (data || [])
                 .map(row => ({
                     date: row.start_date,
-                    title: String(row.category || "").trim()
+                    title: String(row.name || "").trim()
                 }))
                 .filter(row => row.date && row.title)
         });
