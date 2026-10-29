@@ -208,9 +208,9 @@ function reservationCutoffPassed(jalaliDate, sessionTime) {
 
 
 
+
 async function getSessionSettingsForDate(date) {
-    // ابتدا بررسی می‌کنیم آیا برای همین تاریخ، تنظیم ویژه وجود دارد.
-    // تنظیمات special_date از sessions کاملاً مستقل هستند.
+    // ابتدا بررسی تنظیم ویژه برای تاریخ مشخص
     const { data: special, error: specialError } = await supabase
         .from("activity_types")
         .select("name,start_date,category,sessions,points")
@@ -231,23 +231,19 @@ async function getSessionSettingsForDate(date) {
 
         return {
             start_date: special.start_date,
-
             sessions: Array.isArray(special.sessions)
                 ? special.sessions
                 : [],
-
             capacity,
             is_special: true,
-
             title: String(
                 special.category || special.name || ""
             ).trim(),
-
             max_companions: Math.max(0, capacity - 1)
         };
     }
 
-    // اگر تاریخ ویژه‌ای پیدا نشد، تنظیمات عادی را می‌خوانیم.
+    // در نبود تاریخ ویژه، آخرین تنظیم عادی تا تاریخ موردنظر
     const { data, error } = await supabase
         .from("activity_types")
         .select("sessions,start_date,points")
@@ -269,11 +265,9 @@ async function getSessionSettingsForDate(date) {
 
     return {
         start_date: data.start_date,
-
         sessions: Array.isArray(data.sessions)
             ? data.sessions
             : [],
-
         capacity,
         is_special: false,
         title: "",
