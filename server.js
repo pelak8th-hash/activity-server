@@ -207,12 +207,13 @@ function reservationCutoffPassed(jalaliDate, sessionTime) {
 }
 
 
+
 async function getSessionSettingsForDate(date) {
     // ابتدا بررسی می‌کنیم آیا برای همین تاریخ، تنظیم ویژه وجود دارد.
     // تنظیمات special_date از sessions کاملاً مستقل هستند.
     const { data: special, error: specialError } = await supabase
         .from("activity_types")
-        .select("name,start_date,category,sessions,points,max_companions")
+        .select("name,start_date,category,sessions,points")
         .eq("setting_type", "special_date")
         .eq("start_date", date)
         .limit(1)
@@ -222,7 +223,11 @@ async function getSessionSettingsForDate(date) {
 
     if (special) {
         const parsedCapacity = Number(special.points);
-        const parsedMaxCompanions = Number(special.max_companions);
+
+        const capacity =
+            Number.isFinite(parsedCapacity) && parsedCapacity > 0
+                ? Math.floor(parsedCapacity)
+                : 10;
 
         return {
             start_date: special.start_date,
@@ -231,26 +236,18 @@ async function getSessionSettingsForDate(date) {
                 ? special.sessions
                 : [],
 
-            capacity:
-                Number.isFinite(parsedCapacity) && parsedCapacity > 0
-                    ? Math.floor(parsedCapacity)
-                    : 10,
-
+            capacity,
             is_special: true,
 
             title: String(
                 special.category || special.name || ""
             ).trim(),
 
-            max_companions:
-                Number.isInteger(parsedMaxCompanions) &&
-                parsedMaxCompanions >= 0
-                    ? parsedMaxCompanions
-                    : 9
+            max_companions: Math.max(0, capacity - 1)
         };
     }
 
-    // اگر تاریخ ویژه‌ای پیدا نشد، تنظیمات عادی را مثل قبل می‌خوانیم.
+    // اگر تاریخ ویژه‌ای پیدا نشد، تنظیمات عادی را می‌خوانیم.
     const { data, error } = await supabase
         .from("activity_types")
         .select("sessions,start_date,points")
@@ -280,7 +277,7 @@ async function getSessionSettingsForDate(date) {
         capacity,
         is_special: false,
         title: "",
-        max_companions: 9
+        max_companions: Math.max(0, capacity - 1)
     };
 }
 
