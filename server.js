@@ -831,7 +831,7 @@ app.post("/reservation", async (req, res) => {
         } = await supabase
             .from("reservations")
             .select("companions")
-            .eq("date", date)
+            .eq("date", reservationDate)
             .eq("time", time);
 
         if (currentReservationsError) {
@@ -1634,7 +1634,7 @@ app.post("/payment-test/complete", async (req, res) => {
         } = await supabase
             .from("reservations")
             .select("companions")
-            .eq("date", date)
+            .eq("date", reservationDate)
             .eq("time", time);
 
         if (currentReservationsError) {
