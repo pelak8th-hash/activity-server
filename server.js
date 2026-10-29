@@ -824,7 +824,7 @@ app.post("/reservation", async (req, res) => {
                 success: false,
                 message: "SESSIONS_NOT_FOUND"
             });
-        }}
+        }
 
         // محاسبه ظرفیت مصرف‌شده
         const {
