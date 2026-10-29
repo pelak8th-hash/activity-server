@@ -773,8 +773,15 @@ app.post("/reservation", async (req, res) => {
         const sessionSettings =
             await getSessionSettingsForDate(reservationDate);
 
-        const maxCompanions =
-            sessionSettings?.max_companions ?? 9;
+        if (!sessionSettings) {
+            return res.status(409).json({
+                success: false,
+                message: "SESSIONS_NOT_FOUND"
+            });
+        }
+
+        const maxCompanions = sessionSettings.max_companions;
+
 
         if (
             !Number.isInteger(companionsNumber) ||
@@ -809,13 +816,6 @@ app.post("/reservation", async (req, res) => {
             });
         }
 
-        // استفاده از تنظیمات تاریخ که قبلاً دریافت شده است
-        if (!sessionSettings) {
-            return res.status(409).json({
-                success: false,
-                message: "SESSIONS_NOT_FOUND"
-            });
-        }
 
         // محاسبه ظرفیت مصرف‌شده
         const {
@@ -1547,11 +1547,20 @@ app.post("/payment-test/complete", async (req, res) => {
             req.body.date || ""
         ).trim();
 
+
         const sessionSettings =
             await getSessionSettingsForDate(reservationDate);
 
-        const maxCompanions =
-            sessionSettings?.max_companions ?? 9;
+        if (!sessionSettings) {
+            payment.status = "paid";
+
+            return res.status(409).json({
+                success: false,
+                message: "SESSIONS_NOT_FOUND"
+            });
+        }
+
+        const maxCompanions = sessionSettings.max_companions;
 
         if (
             !Number.isInteger(companionsNumber) ||
@@ -1577,15 +1586,6 @@ app.post("/payment-test/complete", async (req, res) => {
             });
         }
 
-        // استفاده از تنظیمات تاریخ که قبلاً دریافت شده است
-        if (!sessionSettings) {
-            payment.status = "paid";
-
-            return res.status(409).json({
-                success: false,
-                message: "SESSIONS_NOT_FOUND"
-            });
-        }
         // دریافت رزروهای فعلی این سانس
         const {
             data: currentReservations,
