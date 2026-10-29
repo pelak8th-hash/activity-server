@@ -895,9 +895,19 @@ app.post("/reservation", async (req, res) => {
 
         if (
             reservationResult &&
-            reservationResult.success === false &&
-            reservationResult.message === "CAPACITY_FULL"
+            reservationResult.success === false
         ) {
+            const status =
+                reservationResult.message === "CAPACITY_FULL" ||
+                reservationResult.message === "SESSIONS_NOT_FOUND"
+                    ? 409
+                    : 400;
+
+            return res.status(status).json({
+                success: false,
+                message: reservationResult.message
+            });
+        }{
             return res.status(409).json({
                 success: false,
                 message: "CAPACITY_FULL"
@@ -1670,9 +1680,21 @@ app.post("/payment-test/complete", async (req, res) => {
 
         if (
             reservationResult &&
-            reservationResult.success === false &&
-            reservationResult.message === "CAPACITY_FULL"
+            reservationResult.success === false
         ) {
+            payment.status = "paid";
+
+            const status =
+                reservationResult.message === "CAPACITY_FULL" ||
+                reservationResult.message === "SESSIONS_NOT_FOUND"
+                    ? 409
+                    : 400;
+
+            return res.status(status).json({
+                success: false,
+                message: reservationResult.message
+            });
+        }{
             payment.status = "paid";
 
             return res.status(409).json({
