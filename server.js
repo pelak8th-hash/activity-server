@@ -778,12 +778,21 @@ app.post("/reservation", async (req, res) => {
             });
         }
 
+
         const companionsNumber = Number(companions);
+
+        const reservationDate = String(date || "").trim();
+    
+        const sessionSettings =
+            await getSessionSettingsForDate(reservationDate);
+
+        const maxCompanions =
+            sessionSettings?.max_companions ?? 9;
 
         if (
             !Number.isInteger(companionsNumber) ||
             companionsNumber < 0 ||
-            companionsNumber > 9
+            companionsNumber > maxCompanions
         ) {
             return res.status(400).json({
                 success: false,
@@ -1549,34 +1558,21 @@ app.post("/payment-test/complete", async (req, res) => {
             req.body.companions
         );
 
-        // بررسی اطلاعات رزرو
-        if (
-            [
-                first_name,
-                last_name,
-                gender,
-                date,
-                time,
-                activity
-            ].some(
-                value =>
-                    typeof value !== "string" ||
-                    !value.trim()
-            )
-        ) {
-            payment.status = "paid";
+        // بررسی سقف همراهان بر اساس تنظیمات تاریخ رزرو
+        const reservationDate = String(
+            req.body.date || ""
+        ).trim();
 
-            return res.status(400).json({
-                success: false,
-                message: "MISSING_DATA"
-            });
-        }
+        const sessionSettings =
+            await getSessionSettingsForDate(reservationDate);
 
-        // بررسی تعداد همراهان
+        const maxCompanions =
+            sessionSettings?.max_companions ?? 9;
+
         if (
             !Number.isInteger(companionsNumber) ||
             companionsNumber < 0 ||
-            companionsNumber > 9
+            companionsNumber > maxCompanions
         ) {
             payment.status = "paid";
 
@@ -1585,6 +1581,7 @@ app.post("/payment-test/complete", async (req, res) => {
                 message: "INVALID_COMPANIONS"
             });
         }
+
 
         // جلوگیری از رزرو در ۳۰ دقیقه پایانی
         if (reservationCutoffPassed(date, time)) {
