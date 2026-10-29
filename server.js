@@ -361,7 +361,7 @@ app.get("/reservation/special-dates", async (req, res) => {
 
         const { data, error } = await supabase
             .from("activity_types")
-            .select("start_date,category")
+            .select("start_date,name,category")
             .eq("setting_type", "special_date")
             .gte("start_date", startDate)
             .lte("start_date", endDate)
