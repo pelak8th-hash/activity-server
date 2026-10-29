@@ -907,11 +907,6 @@ app.post("/reservation", async (req, res) => {
                 success: false,
                 message: reservationResult.message
             });
-        }{
-            return res.status(409).json({
-                success: false,
-                message: "CAPACITY_FULL"
-            });
         }
 
         if (
@@ -1693,13 +1688,6 @@ app.post("/payment-test/complete", async (req, res) => {
             return res.status(status).json({
                 success: false,
                 message: reservationResult.message
-            });
-        }{
-            payment.status = "paid";
-
-            return res.status(409).json({
-                success: false,
-                message: "CAPACITY_FULL"
             });
         }
 
