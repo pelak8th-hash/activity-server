@@ -206,7 +206,30 @@ function reservationCutoffPassed(jalaliDate, sessionTime) {
     return start.getTime() - nowDate.getTime() <= 0;
 }
 
+// خواندن عنوان و توضیحات مناسبت ویژه از ستون name
+function parseSpecialName(value) {
+    let parsed = value;
 
+    if (typeof value === "string") {
+        try {
+            parsed = JSON.parse(value);
+        } catch {
+            parsed = value;
+        }
+    }
+
+    if (Array.isArray(parsed)) {
+        return {
+            title: String(parsed[0] || "").trim(),
+            description: String(parsed[1] || "").trim()
+        };
+    }
+
+    return {
+        title: String(value || "").trim(),
+        description: ""
+    };
+}
 
 
 async function getSessionSettingsForDate(date) {
@@ -222,6 +245,7 @@ async function getSessionSettingsForDate(date) {
     if (specialError) throw specialError;
 
     if (special) {
+        const specialInfo = parseSpecialName(special.name);
         const parsedCapacity = Number(special.points);
 
         const capacity =
@@ -236,13 +260,12 @@ async function getSessionSettingsForDate(date) {
                 : [],
             capacity,
             is_special: true,
-            title: String(
-                special.name || special.category || ""
-            ).trim(),
+            title: specialInfo.title || String(special.category || "").trim(),
+            description: specialInfo.description,
             max_companions: Math.max(0, capacity - 1)
         };
     }
-
+    
     // در نبود تاریخ ویژه، آخرین تنظیم عادی تا تاریخ موردنظر
     const { data, error } = await supabase
         .from("activity_types")
@@ -322,6 +345,7 @@ app.get("/reservation/sessions", async (req, res) => {
             capacity: data.capacity,
             is_special: data.is_special === true,
             title: data.title || "",
+            description: data.description || "",
             max_companions: data.max_companions
         });
 
@@ -375,17 +399,21 @@ app.get("/reservation/special-dates", async (req, res) => {
                 message: "DATABASE_ERROR"
             });
         }
-
+    
         return res.status(200).json({
             success: true,
             special_dates: (data || [])
-                .map(row => ({
-                    date: row.start_date,
-                    title: String(row.name || "").trim()
-                }))
+                .map(row => {
+                    const specialInfo = parseSpecialName(row.name);
+    
+                    return {
+                        date: row.start_date,
+                        title: specialInfo.title || String(row.category || "").trim(),
+                        description: specialInfo.description
+                    };
+                })
                 .filter(row => row.date && row.title)
         });
-
     } catch (error) {
         console.error("Special dates server error:", error);
 
