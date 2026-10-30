@@ -1,3 +1,4 @@
+
 const { createClient } = require("@supabase/supabase-js");
 const { toJalaali } = require("jalaali-js");
 
@@ -125,8 +126,38 @@ async function main() {
 
     console.log("Active reservations after:", afterCount);
     console.log("Total archived reservations:", archivedCount);
+
+    // ==========================================
+    // حذف تنظیمات special_date تاریخ‌گذشته
+    // ==========================================
+
+    const {
+        data: deletedSpecialDates,
+        error: specialDateError
+    } = await supabase
+        .from("activity_types")
+        .delete()
+        .eq("setting_type", "special_date")
+        .lt("start_date", today)
+        .select("id, name, start_date");
+
+    if (specialDateError) {
+        throw new Error(
+            `Deleting expired special dates failed: ${specialDateError.message}`
+        );
+    }
+
+    console.log(
+        "Expired special dates deleted:",
+        deletedSpecialDates.length
+    );
+
+    if (deletedSpecialDates.length > 0) {
+        console.log("Deleted special dates:", deletedSpecialDates);
+    }
+
     console.log("Iranian date used:", today);
-    console.log("Archiving operation completed.");
+    console.log("Archiving and cleanup operations completed.");
 }
 
 main().catch((error) => {
