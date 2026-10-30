@@ -231,6 +231,30 @@ function parseSpecialName(value) {
     };
 }
 
+// ستون name مناسبت می‌تواند متن ساده یا آرایه JSON شامل عنوان و توضیحات باشد.
+function parseSpecialName(value) {
+    let parsed = value;
+
+    if (typeof value === "string") {
+        try {
+            parsed = JSON.parse(value);
+        } catch {
+            parsed = value;
+        }
+    }
+
+    if (Array.isArray(parsed)) {
+        return {
+            title: String(parsed[0] || "").trim(),
+            description: String(parsed[1] || "").trim()
+        };
+    }
+
+    return {
+        title: String(value || "").trim(),
+        description: ""
+    };
+}
 
 async function getSessionSettingsForDate(date) {
     // ابتدا بررسی تنظیم ویژه برای تاریخ مشخص
@@ -348,7 +372,7 @@ app.get("/reservation/sessions", async (req, res) => {
             description: data.description || "",
             max_companions: data.max_companions
         });
-
+        
     } catch (error) {
         console.error("Sessions server error:", error);
 
@@ -404,22 +428,210 @@ app.get("/reservation/special-dates", async (req, res) => {
             success: true,
             special_dates: (data || [])
                 .map(row => {
-                    const specialInfo = parseSpecialName(row.name);
-    
+                    const info = parseSpecialName(row.name);
+
                     return {
                         date: row.start_date,
-                        title: specialInfo.title || String(row.category || "").trim(),
-                        description: specialInfo.description
+                        title: info.title,
+                        description: info.description
                     };
                 })
                 .filter(row => row.date && row.title)
         });
+    
     } catch (error) {
         console.error("Special dates server error:", error);
 
         return res.status(500).json({
             success: false,
             message: "SERVER_ERROR"
+        });
+    }
+});
+
+// ========================================
+// مدیریت مناسبت‌ها برای پنل مدیریت
+// ========================================
+
+// دریافت مناسبت‌های آینده
+app.get("/reservation/special-dates/admin", async (req, res) => {
+    try {
+        const startDate = normalizeDigits(req.query.start_date || "");
+
+        if (!/^\d{4}\/\d{2}\/\d{2}$/.test(startDate)) {
+            return res.status(400).json({
+                success: false,
+                message: "INVALID_DATE"
+            });
+        }
+
+        const { data, error } = await supabase
+            .from("activity_types")
+            .select("id,name,points,start_date,sessions")
+            .eq("setting_type", "special_date")
+            .gte("start_date", startDate)
+            .order("start_date", { ascending: true });
+
+        if (error) throw error;
+
+        return res.status(200).json({
+            success: true,
+            special_dates: (data || []).map(row => {
+                const info = parseSpecialName(row.name);
+
+                return {
+                    id: row.id,
+                    date: row.start_date,
+                    title: info.title,
+                    description: info.description,
+                    capacity: Number(row.points) || 0,
+                    sessions: Array.isArray(row.sessions)
+                        ? row.sessions
+                        : []
+                };
+            })
+        });
+
+    } catch (error) {
+        console.error("Admin special dates load error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "DATABASE_ERROR"
+        });
+    }
+});
+
+
+// ثبت مناسبت جدید
+app.post("/reservation/special-dates/admin", async (req, res) => {
+    try {
+        const date = normalizeDigits(req.body.date || "");
+        const title = String(req.body.title || "").trim();
+        const description = String(req.body.description || "").trim();
+        const capacity = Number(req.body.capacity);
+        const session = String(req.body.session || "").trim();
+
+        const datePattern = /^\d{4}\/\d{2}\/\d{2}$/;
+
+        const timePattern =
+            /^([01]\d|2[0-3]):[0-5]\d تا ([01]\d|2[0-3]):[0-5]\d$/;
+
+        if (
+            !datePattern.test(date) ||
+            !title ||
+            title.length > 120 ||
+            description.length > 1000 ||
+            !Number.isInteger(capacity) ||
+            capacity < 1 ||
+            capacity > 10000 ||
+            !timePattern.test(session)
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "INVALID_DATA"
+            });
+        }
+
+        // بررسی تکراری نبودن تاریخ
+        const { data: existing, error: existingError } = await supabase
+            .from("activity_types")
+            .select("id")
+            .eq("setting_type", "special_date")
+            .eq("start_date", date)
+            .limit(1);
+
+        if (existingError) throw existingError;
+
+        if (existing && existing.length) {
+            return res.status(409).json({
+                success: false,
+                message: "DATE_EXISTS"
+            });
+        }
+
+        // ذخیره مناسبت در Supabase
+        const { data, error } = await supabase
+            .from("activity_types")
+            .insert([{
+                name: JSON.stringify([title, description]),
+                points: capacity,
+                setting_type: "special_date",
+                start_date: date,
+                sessions: [session],
+                category: "session"
+            }])
+            .select("id,name,points,start_date,sessions")
+            .single();
+
+        if (error) throw error;
+
+        const info = parseSpecialName(data.name);
+
+        return res.status(201).json({
+            success: true,
+            special_date: {
+                id: data.id,
+                date: data.start_date,
+                title: info.title,
+                description: info.description,
+                capacity: Number(data.points) || 0,
+                sessions: Array.isArray(data.sessions)
+                    ? data.sessions
+                    : []
+            }
+        });
+
+    } catch (error) {
+        console.error("Admin special date create error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "DATABASE_ERROR"
+        });
+    }
+});
+
+
+// حذف مناسبت
+app.delete("/reservation/special-dates/admin/:id", async (req, res) => {
+    try {
+        const id = Number(req.params.id);
+
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: "INVALID_ID"
+            });
+        }
+
+        const { data, error } = await supabase
+            .from("activity_types")
+            .delete()
+            .eq("id", id)
+            .eq("setting_type", "special_date")
+            .select("id");
+
+        if (error) throw error;
+
+        if (!data || !data.length) {
+            return res.status(404).json({
+                success: false,
+                message: "NOT_FOUND"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            deleted_id: id
+        });
+
+    } catch (error) {
+        console.error("Admin special date delete error:", error);
+
+        return res.status(500).json({
+            success: false,
+            message: "DATABASE_ERROR"
         });
     }
 });
