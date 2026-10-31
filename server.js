@@ -24,10 +24,7 @@ const supabase = createClient(
 // تنظیمات سرور
 // ========================================
 
-app.use(cors());
-app.use(express.json());
-
-// ثبت درخواست‌ها برای تشخیص خطاهای ارتباطی
+// ثبت درخواست‌ها؛ باید قبل از CORS قرار بگیرد
 app.use((req, res, next) => {
     const startedAt = Date.now();
 
@@ -37,27 +34,38 @@ app.use((req, res, next) => {
 
     res.setHeader("X-Request-Id", requestId);
 
+    const monitoredPaths = [
+        "/reservation/sessions",
+        "/reservation/capacity",
+        "/reservation/special-dates/admin",
+        "/"
+    ];
+
     const shouldLog =
-        req.path.startsWith("/reservation/special-dates/admin") ||
-        req.path === "/reservation/sessions" ||
-        req.path === "/reservation/capacity";
+        monitoredPaths.some(path =>
+            req.path === path || req.path.startsWith(path + "/")
+        );
 
     if (shouldLog) {
         console.log(
-            `[REQ START] id=${requestId} method=${req.method} path=${req.originalUrl}`
+            `[REQ START] id=${requestId} method=${req.method} path=${req.originalUrl} origin=${req.headers.origin || "-"}`
         );
     }
 
     res.on("finish", () => {
         if (shouldLog) {
             console.log(
-                `[REQ END] id=${requestId} method=${req.method} status=${res.statusCode} duration_ms=${Date.now() - startedAt}`
+                `[REQ END] id=${requestId} method=${req.method} path=${req.originalUrl} status=${res.statusCode} duration_ms=${Date.now() - startedAt} allow_origin=${res.getHeader("Access-Control-Allow-Origin") || "-"} allow_methods=${res.getHeader("Access-Control-Allow-Methods") || "-"}`
             );
         }
     });
 
     next();
 });
+
+// تنظیمات CORS
+app.use(cors());
+app.use(express.json());
 
 // ========================================
 // ابزارهای تاریخ شمسی و محدودیت رزرو
