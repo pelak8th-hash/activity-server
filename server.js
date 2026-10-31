@@ -27,7 +27,7 @@ const supabase = createClient(
 app.use(cors());
 app.use(express.json());
 
-// ثبت زمان و نتیجهٔ درخواست‌ها برای تشخیص تأخیر Railway، شبکه و Supabase
+// ثبت درخواست‌ها برای تشخیص خطاهای ارتباطی
 app.use((req, res, next) => {
     const startedAt = Date.now();
 
@@ -37,22 +37,21 @@ app.use((req, res, next) => {
 
     res.setHeader("X-Request-Id", requestId);
 
-    const monitoredPaths = [
-        "/reservation/sessions",
-        "/reservation/capacity",
-        "/"
-    ];
+    const shouldLog =
+        req.path.startsWith("/reservation/special-dates/admin") ||
+        req.path === "/reservation/sessions" ||
+        req.path === "/reservation/capacity";
 
-    if (monitoredPaths.includes(req.path)) {
+    if (shouldLog) {
         console.log(
             `[REQ START] id=${requestId} method=${req.method} path=${req.originalUrl}`
         );
     }
 
     res.on("finish", () => {
-        if (monitoredPaths.includes(req.path)) {
+        if (shouldLog) {
             console.log(
-                `[REQ END] id=${requestId} path=${req.path} status=${res.statusCode} duration_ms=${Date.now() - startedAt}`
+                `[REQ END] id=${requestId} method=${req.method} status=${res.statusCode} duration_ms=${Date.now() - startedAt}`
             );
         }
     });
