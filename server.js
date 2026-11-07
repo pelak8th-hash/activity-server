@@ -2029,7 +2029,1178 @@ app.post("/payment-test/complete", async (req, res) => {
 // ========================================
 // تأیید پرداخت آزمایشی
 // ========================================
+// ========================================
+// احراز هویت پنل مشتری
+// ========================================
 
+const CUSTOMER_OTP_LIFETIME_MS = 10 * 60 * 1000;
+
+const CUSTOMER_SESSION_LIFETIME_MS =
+    7 * 24 * 60 * 60 * 1000;
+
+const CUSTOMER_COOKIE_NAME = "customer_session";
+
+
+// ========================================
+// ارسال OTP مخصوص پنل مشتری
+// این تابع مستقل از OTP رزرو است.
+// ========================================
+
+async function sendCustomerBaleOTP(phone, otp) {
+
+    const response = await fetch(
+
+        "https://safir.bale.ai/api/v3/send_message",
+
+        {
+
+            method: "POST",
+
+            headers: {
+
+                "api-access-key":
+                    process.env.BALE_API_ACCESS_KEY,
+
+                "Content-Type":
+                    "application/json"
+
+            },
+
+            body: JSON.stringify({
+
+                bot_id:
+                    Number(process.env.BALE_BOT_ID),
+
+                phone_number: phone,
+
+                message_data: {
+
+                    otp_message: {
+
+                        otp
+
+                    }
+
+                }
+
+            })
+
+        }
+
+    );
+
+
+    const text = await response.text();
+
+    return {
+
+        response,
+
+        text
+
+    };
+
+}
+
+
+// ========================================
+// توابع کمکی
+// ========================================
+
+function customerLocalPhone(normalizedPhone) {
+
+    if (!/^98\d{10}$/.test(normalizedPhone)) {
+
+        return null;
+
+    }
+
+    return "0" + normalizedPhone.slice(2);
+
+}
+
+
+function customerTokenHash(token) {
+
+    return crypto
+        .createHash("sha256")
+        .update(token)
+        .digest("hex");
+
+}
+
+
+function customerOTPHash(challengeId, phone, otp) {
+
+    return crypto
+        .createHash("sha256")
+        .update(
+            `${process.env.SUPABASE_SECRET_KEY}:${challengeId}:${phone}:${otp}`
+        )
+        .digest("hex");
+
+}
+
+
+function getCustomerSessionToken(req) {
+
+    const cookieHeader =
+        req.headers.cookie || "";
+
+    for (const item of cookieHeader.split(";")) {
+
+        const index = item.indexOf("=");
+
+        if (index < 0) continue;
+
+        if (
+            item.slice(0, index).trim() ===
+            CUSTOMER_COOKIE_NAME
+        ) {
+
+            return item.slice(index + 1).trim();
+
+        }
+
+    }
+
+    return null;
+
+}
+
+
+function setCustomerSessionCookie(res, token, maxAge) {
+
+    res.setHeader(
+
+        "Set-Cookie",
+
+        `${CUSTOMER_COOKIE_NAME}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Domain=pelak8th.ir; Max-Age=${maxAge}`
+
+    );
+
+}
+
+
+// ========================================
+// بررسی وضعیت سرور و دیتابیس
+// ========================================
+
+app.get("/customer/auth/health", async (req, res) => {
+
+    try {
+
+        const { error } = await supabase
+            .from("people")
+            .select("id")
+            .limit(1);
+
+
+        if (error) {
+
+            console.error(
+                "Customer auth health database error:",
+                error
+            );
+
+            return res.status(503).json({
+
+                success: false,
+
+                server: "online",
+
+                database: "disconnected"
+
+            });
+
+        }
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            server: "online",
+
+            database: "connected"
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Customer auth health error:",
+            error
+        );
+
+        return res.status(503).json({
+
+            success: false,
+
+            server: "online",
+
+            database: "disconnected"
+
+        });
+
+    }
+
+});
+
+
+// ========================================
+// درخواست کد ورود پنل مشتری
+// ========================================
+
+app.post("/customer/auth/request-code", async (req, res) => {
+
+    let challengeId = null;
+
+    try {
+
+        const normalized =
+            normalizePhone(req.body?.phone);
+
+        const phone =
+            customerLocalPhone(normalized);
+
+
+        if (!phone) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "PHONE_INVALID"
+
+            });
+
+        }
+
+
+        // بررسی محدودیت ارسال کد
+
+        const { data: allowed, error: limitError } =
+            await supabase.rpc(
+
+                "allow_customer_otp_request",
+
+                {
+
+                    p_phone: phone
+
+                }
+
+            );
+
+
+        if (limitError) {
+
+            console.error(
+                "Customer OTP rate-limit error:",
+                limitError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "SERVER_ERROR"
+
+            });
+
+        }
+
+
+        if (allowed !== true) {
+
+            return res.status(429).json({
+
+                success: false,
+
+                message: "OTP_RATE_LIMIT"
+
+            });
+
+        }
+
+
+        // جست‌وجوی شماره در person_phones
+
+        const { data: phoneRows, error: phoneError } =
+            await supabase
+
+                .from("person_phones")
+
+                .select("person_id")
+
+                .eq("phone", phone)
+
+                .limit(1);
+
+
+        if (phoneError) {
+
+            console.error(
+                "Customer phone lookup error:",
+                phoneError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        // جلوگیری از افشای شماره‌های ثبت‌نشده
+
+        if (!phoneRows || phoneRows.length === 0) {
+
+            return res.status(200).json({
+
+                success: true,
+
+                message: "IF_REGISTERED",
+
+                expires_in:
+                    CUSTOMER_OTP_LIFETIME_MS / 1000
+
+            });
+
+        }
+
+
+        const personId =
+            phoneRows[0].person_id;
+
+
+        // بررسی وجود شخص
+
+        const { data: people, error: personError } =
+            await supabase
+
+                .from("people")
+
+                .select("id")
+
+                .eq("id", personId)
+
+                .limit(1);
+
+
+        if (personError) {
+
+            console.error(
+                "Customer profile lookup error:",
+                personError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        if (!people || people.length === 0) {
+
+            return res.status(200).json({
+
+                success: true,
+
+                message: "IF_REGISTERED",
+
+                expires_in:
+                    CUSTOMER_OTP_LIFETIME_MS / 1000
+
+            });
+
+        }
+
+
+        const now =
+            new Date().toISOString();
+
+
+        // باطل کردن کدهای قبلی
+
+        const { error: invalidateError } =
+            await supabase
+
+                .from("customer_otp_challenges")
+
+                .update({
+
+                    consumed_at: now
+
+                })
+
+                .eq("phone", phone)
+
+                .is("consumed_at", null);
+
+
+        if (invalidateError) {
+
+            console.error(
+                "Previous customer OTP invalidation error:",
+                invalidateError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        // تولید کد جدید
+
+        const otp =
+            crypto.randomInt(100000, 1000000).toString();
+
+
+        challengeId =
+            crypto.randomUUID();
+
+
+        const codeHash =
+            customerOTPHash(
+                challengeId,
+                phone,
+                otp
+            );
+
+
+        const expiresAt =
+            new Date(
+                Date.now() + CUSTOMER_OTP_LIFETIME_MS
+            ).toISOString();
+
+
+        // ذخیره کد در Supabase
+
+        const { error: insertError } =
+            await supabase
+
+                .from("customer_otp_challenges")
+
+                .insert({
+
+                    id: challengeId,
+
+                    phone,
+
+                    person_id: personId,
+
+                    code_hash: codeHash,
+
+                    expires_at: expiresAt
+
+                });
+
+
+        if (insertError) {
+
+            console.error(
+                "Customer OTP insert error:",
+                insertError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        // ارسال کد از طریق بله
+
+        const {
+            response: baleResponse,
+            text: baleText
+        } = await sendCustomerBaleOTP(
+            normalized,
+            otp
+        );
+
+
+        console.log(
+            "Customer Bale status:",
+            baleResponse.status
+        );
+
+
+        console.log(
+            "Customer Bale response:",
+            baleText
+        );
+
+
+        if (!baleResponse.ok) {
+
+            await supabase
+
+                .from("customer_otp_challenges")
+
+                .update({
+
+                    consumed_at:
+                        new Date().toISOString()
+
+                })
+
+                .eq("id", challengeId);
+
+
+            return res.status(502).json({
+
+                success: false,
+
+                message: "BALE_ERROR"
+
+            });
+
+        }
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            challenge_id: challengeId,
+
+            message: "OTP_SENT",
+
+            expires_in:
+                CUSTOMER_OTP_LIFETIME_MS / 1000
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Customer OTP request error:",
+            error
+        );
+
+
+        if (challengeId) {
+
+            await supabase
+
+                .from("customer_otp_challenges")
+
+                .update({
+
+                    consumed_at:
+                        new Date().toISOString()
+
+                })
+
+                .eq("id", challengeId)
+
+                .then(() => {})
+
+                .catch(() => {});
+
+        }
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "SERVER_ERROR"
+
+        });
+
+    }
+
+});
+
+
+// ========================================
+// تأیید کد و ایجاد نشست
+// ========================================
+
+app.post("/customer/auth/verify-code", async (req, res) => {
+
+    try {
+
+        const challengeId =
+            String(req.body?.challenge_id || "");
+
+        const code =
+            String(req.body?.code || "").trim();
+
+
+        if (
+
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId) ||
+
+            !/^\d{6}$/.test(code)
+
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                message: "OTP_INVALID"
+
+            });
+
+        }
+
+
+        // دریافت اطلاعات کد
+
+        const { data: challenges, error: challengeError } =
+            await supabase
+
+                .from("customer_otp_challenges")
+
+                .select("id, phone")
+
+                .eq("id", challengeId)
+
+                .limit(1);
+
+
+        if (challengeError) {
+
+            console.error(
+                "Customer OTP lookup error:",
+                challengeError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "DATABASE_ERROR"
+
+            });
+
+        }
+
+
+        if (!challenges || challenges.length === 0) {
+
+            return res.status(401).json({
+
+                success: false,
+
+                message: "OTP_NOT_FOUND"
+
+            });
+
+        }
+
+
+        const challenge =
+            challenges[0];
+
+
+        const codeHash =
+            customerOTPHash(
+                challengeId,
+                challenge.phone,
+                code
+            );
+
+
+        // بررسی کد با RPC
+
+        const {
+            data: verificationData,
+            error: verificationError
+        } = await supabase.rpc(
+
+            "verify_customer_otp",
+
+            {
+
+                p_challenge_id: challengeId,
+
+                p_code_hash: codeHash
+
+            }
+
+        );
+
+
+        if (verificationError) {
+
+            console.error(
+                "Customer OTP verification RPC error:",
+                verificationError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "OTP_VERIFY_FAILED"
+
+            });
+
+        }
+
+
+        const verification =
+            Array.isArray(verificationData)
+                ? verificationData[0]
+                : verificationData;
+
+
+        if (
+            !verification ||
+            verification.result !== "verified"
+        ) {
+
+            let message = "INVALID_OTP";
+
+
+            if (verification?.result === "expired") {
+
+                message = "OTP_EXPIRED";
+
+            }
+
+
+            if (verification?.result === "locked") {
+
+                message = "TOO_MANY_ATTEMPTS";
+
+            }
+
+
+            if (verification?.result === "not_found") {
+
+                message = "OTP_NOT_FOUND";
+
+            }
+
+
+            return res.status(401).json({
+
+                success: false,
+
+                message
+
+            });
+
+        }
+
+
+        const personId =
+            verification.verified_person_id;
+
+
+        // دریافت اطلاعات مشتری
+
+        const { data: people, error: personError } =
+            await supabase
+
+                .from("people")
+
+                .select("id, first_name, last_name")
+
+                .eq("id", personId)
+
+                .limit(1);
+
+
+        if (
+            personError ||
+            !people ||
+            people.length === 0
+        ) {
+
+            console.error(
+                "Customer profile load error:",
+                personError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "CUSTOMER_NOT_FOUND"
+
+            });
+
+        }
+
+
+        // تولید توکن نشست
+
+        const token =
+            crypto.randomBytes(32).toString("hex");
+
+
+        const tokenHash =
+            customerTokenHash(token);
+
+
+        const expiresAt =
+            new Date(
+                Date.now() + CUSTOMER_SESSION_LIFETIME_MS
+            ).toISOString();
+
+
+        // ذخیره نشست در Supabase
+
+        const { error: sessionError } =
+            await supabase
+
+                .from("customer_sessions")
+
+                .insert({
+
+                    token_hash: tokenHash,
+
+                    person_id: personId,
+
+                    phone: challenge.phone,
+
+                    expires_at: expiresAt
+
+                });
+
+
+        if (sessionError) {
+
+            console.error(
+                "Customer session insert error:",
+                sessionError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "SESSION_CREATE_FAILED"
+
+            });
+
+        }
+
+
+        setCustomerSessionCookie(
+
+            res,
+
+            token,
+
+            CUSTOMER_SESSION_LIFETIME_MS / 1000
+
+        );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            customer: {
+
+                first_name: people[0].first_name,
+
+                last_name: people[0].last_name
+
+            }
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Customer OTP verify error:",
+            error
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "SERVER_ERROR"
+
+        });
+
+    }
+
+});
+
+
+// ========================================
+// بازیابی نشست مشتری
+// ========================================
+
+app.get("/customer/auth/me", async (req, res) => {
+
+    try {
+
+        const token =
+            getCustomerSessionToken(req);
+
+
+        if (
+            !token ||
+            !/^[a-f0-9]{64}$/.test(token)
+        ) {
+
+            return res.status(401).json({
+
+                success: false,
+
+                message: "NOT_AUTHENTICATED"
+
+            });
+
+        }
+
+
+        const tokenHash =
+            customerTokenHash(token);
+
+
+        const { data: sessions, error: sessionError } =
+            await supabase
+
+                .from("customer_sessions")
+
+                .select("person_id")
+
+                .eq("token_hash", tokenHash)
+
+                .is("revoked_at", null)
+
+                .gt(
+                    "expires_at",
+                    new Date().toISOString()
+                )
+
+                .limit(1);
+
+
+        if (sessionError) {
+
+            console.error(
+                "Customer session lookup error:",
+                sessionError
+            );
+
+            return res.status(500).json({
+
+                success: false,
+
+                message: "SESSION_LOOKUP_FAILED"
+
+            });
+
+        }
+
+
+        if (!sessions || sessions.length === 0) {
+
+            return res.status(401).json({
+
+                success: false,
+
+                message: "SESSION_INVALID"
+
+            });
+
+        }
+
+
+        const { data: people, error: personError } =
+            await supabase
+
+                .from("people")
+
+                .select("first_name, last_name")
+
+                .eq("id", sessions[0].person_id)
+
+                .limit(1);
+
+
+        if (
+            personError ||
+            !people ||
+            people.length === 0
+        ) {
+
+            console.error(
+                "Customer profile lookup error:",
+                personError
+            );
+
+            return res.status(401).json({
+
+                success: false,
+
+                message: "CUSTOMER_NOT_FOUND"
+
+            });
+
+        }
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            customer: {
+
+                first_name: people[0].first_name,
+
+                last_name: people[0].last_name
+
+            }
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Customer session restore error:",
+            error
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "SERVER_ERROR"
+
+        });
+
+    }
+
+});
+
+
+// ========================================
+// خروج مشتری
+// ========================================
+
+app.post("/customer/auth/logout", async (req, res) => {
+
+    try {
+
+        const token =
+            getCustomerSessionToken(req);
+
+
+        if (
+            token &&
+            /^[a-f0-9]{64}$/.test(token)
+        ) {
+
+            const tokenHash =
+                customerTokenHash(token);
+
+
+            const { error } =
+                await supabase
+
+                    .from("customer_sessions")
+
+                    .update({
+
+                        revoked_at:
+                            new Date().toISOString()
+
+                    })
+
+                    .eq("token_hash", tokenHash)
+
+                    .is("revoked_at", null);
+
+
+            if (error) {
+
+                console.error(
+                    "Customer logout error:",
+                    error
+                );
+
+                return res.status(500).json({
+
+                    success: false,
+
+                    message: "LOGOUT_FAILED"
+
+                });
+
+            }
+
+        }
+
+
+        setCustomerSessionCookie(
+
+            res,
+
+            "",
+
+            0
+
+        );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message: "LOGGED_OUT"
+
+        });
+
+
+    } catch (error) {
+
+        console.error(
+            "Customer logout error:",
+            error
+        );
+
+        return res.status(500).json({
+
+            success: false,
+
+            message: "SERVER_ERROR"
+
+        });
+
+    }
+
+});
 
 // ========================================
 // شروع سرور
