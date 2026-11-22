@@ -2281,19 +2281,11 @@ app.post("/customer/auth/request-code", async (req, res) => {
 
         // بررسی محدودیت ارسال کد
 
-        const { data: allowed, error: limitError } =
+        const { data: rateLimitResult, error: limitError } =
             await supabase.rpc(
-
-                "allow_customer_otp_request",
-
-                {
-
-                    p_phone: phone
-
-                }
-
+                "allow_customer_otp_request_v2",
+                { p_phone: phone }
             );
-
 
         if (limitError) {
 
@@ -2313,16 +2305,14 @@ app.post("/customer/auth/request-code", async (req, res) => {
         }
 
 
-        if (allowed !== true) {
-
+        if (rateLimitResult?.allowed !== true) {
             return res.status(429).json({
-
                 success: false,
-
-                message: "OTP_RATE_LIMIT"
-
+                message: "OTP_RATE_LIMIT",
+                retry_at: rateLimitResult?.retry_at || null,
+                retry_after_seconds:
+                    rateLimitResult?.retry_after_seconds || 0
             });
-
         }
 
 
